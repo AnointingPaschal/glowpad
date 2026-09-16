@@ -101,3 +101,10 @@ body {
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
 input[type=number] { -moz-appearance: textfield; }
+
+/* Hide scrollbar (keep scroll functionality) */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* Safe area bottom for mobile nav */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }

@@ -52,7 +52,7 @@ export function TxExplorer() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Header */}
         <div>
           <h2 className="display font-semibold text-lg text-[var(--ink)] mb-1">Explorer</h2>
@@ -177,7 +177,7 @@ export function TxExplorer() {
 
         {/* Arc info box */}
         <div className="glass rounded-xl px-4 py-4 space-y-2">
-          <p className="text-xs font-semibold text-[var(--accent)]">About Arc Testnet</p>
+          <p className="text-xs font-semibold text-[var(--accent)]">About Arc Mainnet</p>
           <p className="text-xs text-[var(--muted)] leading-relaxed">
             On Arc, USDC <em>is</em> the native gas token — one balance pool exposed two ways.
             The ERC-20 view (6 decimals) is used for transfers and display.
@@ -185,7 +185,7 @@ export function TxExplorer() {
             Never sum or display both — that double-counts the same funds.
           </p>
           <div className="pt-1 flex flex-wrap gap-3">
-            <a href="https://explorer.testnet.arc.io" target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1">
+            <a href="https://explorer.arc.io" target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1">
               <ExternalLink size={11} /> Explorer
             </a>
             <a href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1">

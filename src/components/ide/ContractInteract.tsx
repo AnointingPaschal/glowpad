@@ -64,7 +64,7 @@ function FunctionRow({
     setReadResult(null);
     // Simulate read result for demo
     setTimeout(() => {
-      setReadResult('"Simulated read result — connect to Arc Testnet for live data"');
+      setReadResult('"Simulated read result — connect to Arc for live data"');
       setIsReading(false);
     }, 600);
   };

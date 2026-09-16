@@ -242,7 +242,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
     });
   };
 
-  const explorerBase = 'https://explorer.testnet.arc.io';
+  const explorerBase = 'https://explorer.arc.io';
 
   return (
     <div className="space-y-4">
@@ -287,7 +287,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
         </div>
 
         {/* Stats grid */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'Price per token', value: `$${formatUsdc(launch.pricePerToken)}` },
             { label: 'Total supply', value: formatToken(launch.totalSupply, 18) },

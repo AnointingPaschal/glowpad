@@ -51,7 +51,7 @@ export function LaunchpadHome() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Hero */}
         <div
           className="rounded-2xl p-6 relative overflow-hidden"
@@ -73,7 +73,7 @@ export function LaunchpadHome() {
               <span className="display font-bold text-xl text-[var(--ink)]">Glowpad</span>
               <span className="text-xs text-[var(--subtle)] bg-[var(--surface)] border border-[var(--border)] px-2 py-0.5 rounded-full flex items-center gap-1">
                 <TokenUSDC variant="branded" size={11} />
-                Arc Testnet
+                Arc Mainnet
               </span>
             </div>
             <h1 className="display font-bold text-2xl text-[var(--ink)] mb-2 text-balance leading-tight">

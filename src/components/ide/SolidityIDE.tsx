@@ -498,7 +498,7 @@ export function SolidityIDE() {
                         {isDeployPending || isDeployConfirming ? (
                           <><Loader2 size={13} className="animate-spin" /> Deploying…</>
                         ) : (
-                          <><Package size={13} /> Deploy to Arc Testnet</>
+                          <><Package size={13} /> Deploy to Arc Mainnet</>
                         )}
                       </button>
                     )}
