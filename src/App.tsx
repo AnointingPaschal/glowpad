@@ -3,7 +3,7 @@ import { ConnectKitButton } from 'connectkit';
 import {
   Code2, Cpu, Search, ChevronRight, Zap,
   BookOpen, ExternalLink, Menu, X, Rocket,
-  BarChart2,
+  BarChart2, Wallet, ShieldAlert,
 } from 'lucide-react';
 import { NetworkArc } from '@web3icons/react';
 
@@ -12,9 +12,11 @@ import { ContractInteract } from './components/ide/ContractInteract';
 import { LaunchpadHome } from './components/launchpad/LaunchpadHome';
 import { TxExplorer } from './components/ide/TxExplorer';
 import { DexScreen } from './components/dex/DexScreen';
+import { WalletPage } from './wallet/WalletPage';
+import { AdminPanel } from './admin/AdminPanel';
 
 // ── Navigation items ───────────────────────────────────────────────────────
-type NavKey = 'launchpad' | 'dex' | 'ide' | 'interact' | 'explorer';
+type NavKey = 'launchpad' | 'dex' | 'ide' | 'interact' | 'explorer' | 'wallet' | 'admin';
 
 interface NavItem {
   key: NavKey;
@@ -26,9 +28,11 @@ interface NavItem {
 const NAV: NavItem[] = [
   { key: 'launchpad', label: 'Launchpad',    icon: Rocket,    badge: 'Live' },
   { key: 'dex',       label: 'DEX Markets',  icon: BarChart2               },
+  { key: 'wallet',    label: 'Wallet',       icon: Wallet                  },
   { key: 'ide',       label: 'Solidity IDE', icon: Code2                   },
   { key: 'interact',  label: 'Interact',     icon: Cpu                     },
   { key: 'explorer',  label: 'Explorer',     icon: Search                  },
+  { key: 'admin',     label: 'Admin',        icon: ShieldAlert             },
 ];
 
 // ── Desktop Sidebar ────────────────────────────────────────────────────────
@@ -168,9 +172,11 @@ export default function App() {
     switch (activeNav) {
       case 'launchpad': return <LaunchpadHome />;
       case 'dex':       return <DexScreen />;
+      case 'wallet':    return <WalletPage />;
       case 'ide':       return <SolidityIDE />;
       case 'interact':  return <ContractInteract />;
       case 'explorer':  return <TxExplorer />;
+      case 'admin':     return <AdminPanel />;
     }
   };
 
