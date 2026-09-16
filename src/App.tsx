@@ -172,7 +172,7 @@ export default function App() {
 
   const renderContent = () => {
     switch (activeNav) {
-      case 'launchpad': return <LaunchpadHome />;
+      case 'launchpad': return <LaunchpadHome onNavigateToWallet={() => handleNav('wallet')} />;
       case 'dex':       return <DexScreen />;
       case 'wallet':    return <WalletPage />;
       case 'ide':       return <SolidityIDE />;

@@ -14,6 +14,11 @@ export interface SiteInfo {
   discordUrl: string;
   websiteUrl: string;
   adminPassword: string; // hashed locally
+  // Circle Console credentials (stored local only, never sent to Glowpad servers)
+  circleApiKey: string;
+  circleAppId: string;
+  // Override for the compiled-in launchpad contract address
+  launchpadAddress: string;
 }
 
 export interface ContractEntry {
@@ -74,6 +79,9 @@ const DEFAULT: AdminStore = {
     discordUrl: '',
     websiteUrl: '',
     adminPassword: '',
+    circleApiKey: '',
+    circleAppId: '',
+    launchpadAddress: '',
   },
   contracts: [
     {

@@ -102,17 +102,44 @@ export function TokenDetail({token,onBack,wallet}:{token:TokenBalance;onBack:()=
           setTotalSupply(ethers.formatUnits(s,token.decimals));
         } catch { /**/ }
       }
-      const cgId=token.symbol.toLowerCase();
-      const r1=await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`,{signal:AbortSignal.timeout(5000)});
-      if(r1.ok){
-        const d=await r1.json() as Record<string,Record<string,number>>;
-        const e=d[cgId];
-        if(e){setPrice(e.usd??0);setChange24h(e.usd_24h_change??0);setVolume24h(e.usd_24h_vol??0);setMarketCap(e.usd_market_cap??0);}
+
+      // Try DexScreener first (works for Arc and all EVM chains by contract address)
+      let gotPrice=false;
+      if(!token.isNative && token.address && token.address!=='0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'){
+        try {
+          const dsr=await fetch(`https://api.dexscreener.com/latest/dex/tokens/${token.address}`,{signal:AbortSignal.timeout(6000)});
+          if(dsr.ok){
+            const dsd=await dsr.json() as {pairs?:Array<{priceUsd?:string;volume?:{h24?:number};priceChange?:{h24?:number};fdv?:number;info?:{imageUrl?:string}}>};
+            const pairs=dsd.pairs;
+            if(pairs&&pairs.length>0){
+              const top=pairs.sort((a,b)=>(b.volume?.h24??0)-(a.volume?.h24??0))[0];
+              if(top.priceUsd){setPrice(parseFloat(top.priceUsd));gotPrice=true;}
+              if(top.volume?.h24!=null) setVolume24h(top.volume.h24);
+              if(top.priceChange?.h24!=null) setChange24h(top.priceChange.h24);
+              if(top.fdv) setMarketCap(top.fdv);
+              if(top.info?.imageUrl) setLogoUrl(top.info.imageUrl);
+            }
+          }
+        } catch { /**/ }
       }
-      const r2=await fetch(`https://api.coingecko.com/api/v3/coins/${cgId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`,{signal:AbortSignal.timeout(5000)});
-      if(r2.ok){
-        const d2=await r2.json() as {image?:{small?:string}};
-        if(d2.image?.small) setLogoUrl(d2.image.small);
+
+      // Fallback: CoinGecko by symbol for known tokens (ETH, BTC, etc.)
+      if(!gotPrice){
+        const cgMap:Record<string,string>={usdc:'usd-coin',eth:'ethereum',btc:'bitcoin',usdt:'tether',bnb:'binancecoin',sol:'solana',matic:'matic-network',arb:'arbitrum',op:'optimism',avax:'avalanche-2'};
+        const cgId=cgMap[token.symbol.toLowerCase()]??token.symbol.toLowerCase();
+        try {
+          const r1=await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`,{signal:AbortSignal.timeout(5000)});
+          if(r1.ok){
+            const d=await r1.json() as Record<string,Record<string,number>>;
+            const e=d[cgId];
+            if(e){setPrice(e.usd??0);setChange24h(e.usd_24h_change??0);setVolume24h(e.usd_24h_vol??0);setMarketCap(e.usd_market_cap??0);}
+          }
+          const r2=await fetch(`https://api.coingecko.com/api/v3/coins/${cgId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`,{signal:AbortSignal.timeout(5000)});
+          if(r2.ok){
+            const d2=await r2.json() as {image?:{small?:string}};
+            if(d2.image?.small) setLogoUrl(d2.image.small);
+          }
+        } catch { /**/ }
       }
     } catch { /**/ }
     finally{setLoadingMeta(false);}

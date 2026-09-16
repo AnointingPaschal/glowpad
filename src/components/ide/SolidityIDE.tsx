@@ -6,7 +6,8 @@ import {
   FileCode, AlertTriangle, AlertCircle, Info,
   Loader2, Package,
 } from 'lucide-react';
-import { useAccount, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { ethers } from 'ethers';
+import { useWalletContext } from '../../wallet/walletContext';
 import { ARC_MAINNET_CHAIN_ID } from '../../launchpad-contract';
 import { toast } from 'sonner';
 
@@ -178,8 +179,8 @@ interface CompileError {
 interface CompileResult {
   success: boolean;
   errors: CompileError[];
-  abi?: object[];
-  bytecode?: string;
+  abi: object[];
+  bytecode: string;
   contractName?: string;
 }
 
@@ -187,7 +188,7 @@ function simulateCompile(code: string): CompileResult {
   const errors: CompileError[] = [];
 
   if (!code.trim()) {
-    return { success: false, errors: [{ severity: 'error', message: 'Empty source file.' }] };
+    return { success: false, errors: [{ severity: 'error', message: 'Empty source file.' }], abi: [], bytecode: '0x' };
   }
   if (!code.includes('pragma solidity')) {
     errors.push({ severity: 'warning', message: 'No pragma directive found. Specify a compiler version.' });
@@ -197,7 +198,7 @@ function simulateCompile(code: string): CompileResult {
   }
   const contractMatch = code.match(/contract\s+(\w+)/);
   if (!contractMatch) {
-    return { success: false, errors: [{ severity: 'error', message: 'No contract definition found.' }] };
+    return { success: false, errors: [{ severity: 'error', message: 'No contract definition found.' }], abi: [], bytecode: '0x' };
   }
   const contractName = contractMatch[1];
 
@@ -213,9 +214,34 @@ function simulateCompile(code: string): CompileResult {
 }
 
 // ── Main IDE Component ─────────────────────────────────────────────────────
+function PwModal({ onConfirm, onCancel, loading, error }: {
+  onConfirm: (pw: string) => void; onCancel: () => void; loading: boolean; error?: string;
+}) {
+  const [pw, setPw] = useState('');
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-xs rounded-3xl p-6 space-y-4 bg-[var(--surface)] border border-[var(--border)]">
+        <p className="text-sm font-semibold text-[var(--ink)]">Enter wallet password to deploy</p>
+        <input type="password" autoFocus
+          className="w-full px-4 py-3 rounded-2xl text-sm bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--ink)] focus:outline-none"
+          placeholder="Wallet password" value={pw} onChange={e => setPw(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onConfirm(pw); }} />
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-3 rounded-2xl text-sm text-[var(--subtle)] border border-[var(--border)]">Cancel</button>
+          <button onClick={() => onConfirm(pw)} disabled={loading || !pw}
+            className="flex-1 py-3 rounded-2xl text-sm font-semibold text-white bg-[var(--accent)] disabled:opacity-40 flex items-center justify-center gap-2">
+            {loading && <Loader2 size={14} className="animate-spin" />}Deploy
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SolidityIDE() {
-  const { address, chainId } = useAccount();
-  const { switchChain } = useSwitchChain();
+  const walletCtx = useWalletContext();
+  const address = walletCtx?.activeWallet?.address;
 
   const [code, setCode] = useState(TEMPLATES.erc20.code);
   const [activeTemplate, setActiveTemplate] = useState('erc20');
@@ -226,14 +252,11 @@ export function SolidityIDE() {
   const [copied, setCopied] = useState<'bytecode' | 'abi' | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [deployedAddress, setDeployedAddress] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [isDeployPending, setIsDeployPending] = useState(false);
+  const [deployError, setDeployError] = useState('');
 
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
-  const isWrongChain = chainId !== ARC_MAINNET_CHAIN_ID;
-
-  // ── Deploy (simulated bytecode deploy for demo) ────────────────────────
-  const { data: deployHash, isPending: isDeployPending } = useWriteContract();
-  const { isLoading: isDeployConfirming } =
-    useWaitForTransactionReceipt({ hash: deployHash });
 
   const handleCompile = useCallback(() => {
     setIsCompiling(true);
@@ -274,13 +297,46 @@ export function SolidityIDE() {
 
   const handleDeploy = () => {
     if (!compileResult?.success) { toast.error('Compile first'); return; }
-    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
-    if (!address) { toast.error('Connect wallet first'); return; }
+    if (!address) { toast.error('Set up your wallet first'); return; }
+    setDeployError('');
+    setShowPw(true);
+  };
 
-    // Simulate deploy: call the launchpad's getLaunchCount as a stand-in read
-    // (real bytecode deploy needs a raw eth_sendTransaction — this demonstrates the flow)
-    toast.info('Simulated deploy — real bytecode deploy requires a raw send. Connect your wallet and use forge or the Launchpad for on-chain deployment.');
-    setDeployedAddress('0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
+  const doDeploy = async (password: string) => {
+    if (!walletCtx || !compileResult) return;
+    setIsDeployPending(true);
+    setDeployError('');
+    try {
+      const { bytecode, abi } = compileResult;
+      // Parse constructor args if provided
+      const iface = new ethers.Interface(abi);
+      const constructorFrag = iface.fragments.find(f => f.type === 'constructor');
+      let encodedArgs = '';
+      if (constructorArgs.trim() && constructorFrag) {
+        const argValues = constructorArgs.split(',').map(a => a.trim());
+        encodedArgs = ethers.AbiCoder.defaultAbiCoder()
+          .encode(constructorFrag.inputs.map(i => i.type), argValues)
+          .slice(2);
+      }
+      const deployBytecode = bytecode + encodedArgs;
+
+      // Deploy via internal wallet
+      const signer = await (await import('../../wallet/walletStore')).decryptWallet(walletCtx.activeWallet!, password);
+      const { requireChain } = await import('../../onchain-facts');
+      const chain = requireChain(ARC_MAINNET_CHAIN_ID);
+      const provider = new ethers.JsonRpcProvider(chain.rpcUrls[0]);
+      const connected = signer.connect(provider);
+      const tx = await connected.sendTransaction({ data: deployBytecode });
+      const receipt = await tx.wait();
+      const addr = receipt?.contractAddress ?? '';
+      setDeployedAddress(addr);
+      setShowPw(false);
+      toast.success(`Deployed at ${addr.slice(0, 10)}…`);
+    } catch (e) {
+      setDeployError((e as Error).message.slice(0, 120));
+    } finally {
+      setIsDeployPending(false);
+    }
   };
 
   const severityIcon = (s: CompileError['severity']) => {
@@ -291,6 +347,14 @@ export function SolidityIDE() {
 
   return (
     <div className="flex flex-col h-full">
+      {showPw && (
+        <PwModal
+          onConfirm={pw => { void doDeploy(pw); }}
+          onCancel={() => { setShowPw(false); setDeployError(''); }}
+          loading={isDeployPending}
+          error={deployError}
+        />
+      )}
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)] bg-[var(--surface-muted)] shrink-0">
         {/* Template picker */}
@@ -440,19 +504,10 @@ export function SolidityIDE() {
                 <div>
                   <p className="text-xs font-semibold text-[var(--subtle)] uppercase tracking-wide mb-2">Network</p>
                   <div className="flex items-center gap-2 rounded-lg bg-[var(--surface)] px-3 py-2 text-xs">
-                    <span className={`w-2 h-2 rounded-full pulse-dot ${
-                      isWrongChain ? 'bg-[var(--danger)]' : 'bg-[var(--success)]'
-                    }`} />
-                    <span className="text-[var(--muted)]">
-                      {isWrongChain ? 'Wrong network' : 'Arc Mainnet'}
-                    </span>
-                    {isWrongChain && (
-                      <button
-                        onClick={() => switchChain({ chainId: ARC_MAINNET_CHAIN_ID })}
-                        className="ml-auto text-[var(--accent)] hover:text-[var(--accent-hover)] font-medium"
-                      >
-                        Switch
-                      </button>
+                    <span className="w-2 h-2 rounded-full pulse-dot bg-[var(--success)]" />
+                    <span className="text-[var(--muted)]">Arc Mainnet</span>
+                    {address && (
+                      <span className="ml-auto mono text-[var(--subtle)]">{address.slice(0,6)}…{address.slice(-4)}</span>
                     )}
                   </div>
                 </div>
@@ -478,29 +533,34 @@ export function SolidityIDE() {
 
                     {deployedAddress ? (
                       <div className="rounded-lg bg-[var(--success)]/10 border border-[var(--success)]/20 p-3 space-y-1">
-                        <p className="text-xs font-semibold text-[var(--success)]">Deployed (simulated)</p>
+                        <p className="text-xs font-semibold text-[var(--success)]">Deployed on Arc Mainnet</p>
                         <p className="mono text-xs text-[var(--ink)] break-all">{deployedAddress}</p>
                         <a
-                          href={`https://explorer.testnet.arc.io/address/${deployedAddress}`}
+                          href={`https://explorer.arc.io/address/${deployedAddress}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-[var(--accent)] hover:underline"
                         >
-                          View on explorer
+                          View on Arc Explorer ↗
                         </a>
                       </div>
                     ) : (
-                      <button
-                        onClick={handleDeploy}
-                        disabled={!address || isDeployPending || isDeployConfirming}
-                        className="w-full rounded-lg bg-[var(--accent)] text-[#070e1a] text-xs font-semibold py-2.5 hover:bg-[var(--accent-hover)] disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        {isDeployPending || isDeployConfirming ? (
-                          <><Loader2 size={13} className="animate-spin" /> Deploying…</>
-                        ) : (
-                          <><Package size={13} /> Deploy to Arc Mainnet</>
-                        )}
-                      </button>
+                      <>
+                        {deployError && <p className="text-xs text-red-400">{deployError}</p>}
+                        <button
+                          onClick={handleDeploy}
+                          disabled={!address || isDeployPending}
+                          className="w-full rounded-lg bg-[var(--accent)] text-[#070e1a] text-xs font-semibold py-2.5 hover:bg-[var(--accent-hover)] disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          {isDeployPending ? (
+                            <><Loader2 size={13} className="animate-spin" /> Deploying…</>
+                          ) : !address ? (
+                            <><Package size={13} /> Set up wallet to deploy</>
+                          ) : (
+                            <><Package size={13} /> Deploy to Arc Mainnet</>
+                          )}
+                        </button>
+                      </>
                     )}
                   </>
                 )}

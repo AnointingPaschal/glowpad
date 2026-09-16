@@ -86,28 +86,17 @@ export function DexScreen() {
   const [selected, setSelected] = useState<DexToken | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // ── Fetch from DexScreener public API ──────────────────────────────────
-  const fetchTokens = useCallback(async () => {
+  // ── Fetch by contract address search ──────────────────────────────────
+  const fetchByAddress = useCallback(async (addr: string) => {
     setLoading(true);
     setError('');
     try {
-      // Fetch trending pairs across multiple chains via DexScreener
-      const chains = ['ethereum', 'base', 'arbitrum', 'polygon', 'optimism', 'avalanche', 'bsc', 'arc'];
-      const results = await Promise.allSettled(
-        chains.map(c =>
-          fetch(`https://api.dexscreener.com/latest/dex/search?q=USDC&chainIds=${c}`, {
-            headers: { 'Accept': 'application/json' },
-          }).then(r => r.json())
-        )
-      );
-
+      const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addr}`, { headers: { Accept: 'application/json' } });
+      if (!r.ok) throw new Error('Not found');
+      const resp = await r.json() as Record<string, unknown>;
       const allPairs: DexToken[] = [];
-      results.forEach((r, i) => {
-        if (r.status !== 'fulfilled') return;
-        // DexScreener returns an untyped JSON blob; we parse it defensively below
-        const resp = r.value as Record<string, unknown>;
-        if (!Array.isArray(resp.pairs)) return;
-        (resp.pairs as Record<string, unknown>[]).slice(0, 30).forEach(p => {
+      if (Array.isArray(resp.pairs)) {
+        (resp.pairs as Record<string, unknown>[]).forEach(p => {
           const pc = (p.priceChange ?? {}) as Record<string, number>;
           const vol = (p.volume ?? {}) as Record<string, number>;
           const liq = (p.liquidity ?? {}) as Record<string, number>;
@@ -115,9 +104,80 @@ export function DexScreen() {
           const base = (p.baseToken ?? { address: '', name: '', symbol: '' }) as DexToken['baseToken'];
           const quote = (p.quoteToken ?? { symbol: '' }) as DexToken['quoteToken'];
           const pairAddr = typeof p.pairAddress === 'string' ? p.pairAddress : '';
+          const cId = typeof p.chainId === 'string' ? p.chainId : 'unknown';
           allPairs.push({
-            chainId: chains[i],
-            chainName: CHAINS.find(c => c.id === chains[i])?.name ?? chains[i],
+            chainId: cId, chainName: CHAINS.find(c => c.id === cId)?.name ?? cId, dexId: typeof p.dexId === 'string' ? p.dexId : '',
+            pairAddress: pairAddr, baseToken: base, quoteToken: quote,
+            priceUsd: typeof p.priceUsd === 'string' ? p.priceUsd : '0',
+            priceChange: { h1: pc.h1 ?? 0, h6: pc.h6 ?? 0, h24: pc.h24 ?? 0 },
+            volume: { h24: vol.h24 ?? 0 }, liquidity: { usd: liq.usd ?? 0 },
+            txns: { h24: { buys: txns.h24.buys ?? 0, sells: txns.h24.sells ?? 0 } },
+            url: typeof p.url === 'string' ? p.url : `https://dexscreener.com/${cId}/${pairAddr}`,
+            fdv: typeof p.fdv === 'number' ? p.fdv : undefined,
+            marketCap: typeof p.marketCap === 'number' ? p.marketCap : undefined,
+          });
+        });
+      }
+      setTokens(allPairs);
+      setLastUpdated(new Date());
+    } catch { setError('Token not found on DexScreener.'); }
+    finally { setLoading(false); }
+  }, []);
+
+  // ── Fetch from DexScreener public API ──────────────────────────────────
+  const fetchTokens = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      // Fetch trending pairs across multiple chains and queries via DexScreener
+      const queries = [
+        'https://api.dexscreener.com/token-boosts/top/v1',
+        'https://api.dexscreener.com/latest/dex/search?q=ETH',
+        'https://api.dexscreener.com/latest/dex/search?q=USDC',
+        'https://api.dexscreener.com/latest/dex/search?q=BTC',
+        'https://api.dexscreener.com/latest/dex/search?q=PEPE',
+        'https://api.dexscreener.com/latest/dex/search?q=ARB',
+        'https://api.dexscreener.com/latest/dex/search?q=BASE',
+        'https://api.dexscreener.com/latest/dex/search?q=SOL',
+        'https://api.dexscreener.com/latest/dex/search?q=LINK',
+        'https://api.dexscreener.com/latest/dex/search?q=UNI',
+        'https://api.dexscreener.com/latest/dex/search?q=MEME',
+        'https://api.dexscreener.com/latest/dex/search?q=DOGE',
+      ];
+      const chains = ['ethereum', 'base', 'arbitrum', 'polygon', 'optimism', 'avalanche', 'bsc', 'arc'];
+      const chainQueries = chains.map(c =>
+        `https://api.dexscreener.com/latest/dex/search?q=USDC&chainIds=${c}`
+      );
+      const allQueries = [...queries, ...chainQueries];
+      const results = await Promise.allSettled(
+        allQueries.map(url =>
+          fetch(url, { headers: { 'Accept': 'application/json' } }).then(r => r.json())
+        )
+      );
+
+      const allPairs: DexToken[] = [];
+      const seenPairs = new Set<string>();
+      results.forEach(r => {
+        if (r.status !== 'fulfilled') return;
+        const resp = r.value as Record<string, unknown>;
+        // Handle both {pairs:[]} and top-boosts [{tokenAddress, chainId}] shapes
+        let pairsArr: Record<string, unknown>[] = [];
+        if (Array.isArray(resp.pairs)) pairsArr = resp.pairs as Record<string, unknown>[];
+        else if (Array.isArray(resp)) pairsArr = (resp as Record<string, unknown>[]);
+        pairsArr.slice(0, 50).forEach(p => {
+          const pc = (p.priceChange ?? {}) as Record<string, number>;
+          const vol = (p.volume ?? {}) as Record<string, number>;
+          const liq = (p.liquidity ?? {}) as Record<string, number>;
+          const txns = (p.txns ?? { h24: {} }) as { h24: Record<string, number> };
+          const base = (p.baseToken ?? { address: '', name: p.tokenAddress ?? '', symbol: '' }) as DexToken['baseToken'];
+          const quote = (p.quoteToken ?? { symbol: 'USDC' }) as DexToken['quoteToken'];
+          const pairAddr = typeof p.pairAddress === 'string' ? p.pairAddress : (typeof p.tokenAddress === 'string' ? p.tokenAddress : '');
+          if (!pairAddr || seenPairs.has(pairAddr)) return;
+          seenPairs.add(pairAddr);
+          const cId = typeof p.chainId === 'string' ? p.chainId : 'ethereum';
+          allPairs.push({
+            chainId: cId,
+            chainName: CHAINS.find(c => c.id === cId)?.name ?? cId,
             dexId: typeof p.dexId === 'string' ? p.dexId : '',
             pairAddress: pairAddr,
             baseToken: base,
@@ -127,7 +187,7 @@ export function DexScreen() {
             volume: { h24: vol.h24 ?? 0 },
             liquidity: { usd: liq.usd ?? 0 },
             txns: { h24: { buys: txns.h24.buys ?? 0, sells: txns.h24.sells ?? 0 } },
-            url: typeof p.url === 'string' ? p.url : `https://dexscreener.com/${chains[i]}/${pairAddr}`,
+            url: typeof p.url === 'string' ? p.url : `https://dexscreener.com/${cId}/${pairAddr}`,
             fdv: typeof p.fdv === 'number' ? p.fdv : undefined,
             marketCap: typeof p.marketCap === 'number' ? p.marketCap : undefined,
           });
@@ -343,8 +403,15 @@ export function DexScreen() {
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--subtle)]" />
             <input
               value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search token, symbol, address…"
+              onChange={e => {
+                const v = e.target.value;
+                setSearch(v);
+                // Auto-search by contract address when a full 0x address is pasted
+                if (/^0x[0-9a-fA-F]{40}$/.test(v.trim())) {
+                  void fetchByAddress(v.trim());
+                }
+              }}
+              placeholder="Search token, symbol, or paste contract address…"
               className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl pl-9 pr-4 py-2 text-sm text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
           </div>

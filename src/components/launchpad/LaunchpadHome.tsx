@@ -9,7 +9,11 @@ import { CreateLaunch } from '../CreateLaunch';
 
 type SubView = { kind: 'list' } | { kind: 'detail'; id: number } | { kind: 'create' };
 
-export function LaunchpadHome() {
+interface LaunchpadHomeProps {
+  onNavigateToWallet?: () => void;
+}
+
+export function LaunchpadHome({ onNavigateToWallet }: LaunchpadHomeProps) {
   const [view, setView] = useState<SubView>({ kind: 'list' });
 
   const { data: launchCount, refetch: refetchCount } = useReadContract({
@@ -36,6 +40,7 @@ export function LaunchpadHome() {
       <LaunchDetail
         launchId={view.id}
         onBack={() => setView({ kind: 'list' })}
+        onNavigateToWallet={onNavigateToWallet}
       />
     );
   }
@@ -45,6 +50,7 @@ export function LaunchpadHome() {
       <CreateLaunch
         onBack={() => setView({ kind: 'list' })}
         onCreated={() => { refetchCount(); setView({ kind: 'list' }); }}
+        onNavigateToWallet={onNavigateToWallet}
       />
     );
   }

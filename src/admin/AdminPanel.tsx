@@ -7,7 +7,7 @@ import {
   ShieldAlert, Settings, Code2, Coins, DollarSign, Lock,
   Plus, Trash2, Eye, EyeOff, Check, AlertTriangle, Upload,
   ExternalLink, ToggleLeft, ToggleRight, ChevronDown, Save,
-  X, Loader2,
+  X, Loader2, Key,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -18,7 +18,7 @@ import {
 } from './adminStore';
 import { ONCHAIN_CHAINS } from '@/onchain-facts';
 
-type AdminTab = 'site' | 'contracts' | 'tokens' | 'fees' | 'security';
+type AdminTab = 'site' | 'contracts' | 'tokens' | 'fees' | 'security' | 'apikeys';
 
 const CHAIN_OPTIONS = ONCHAIN_CHAINS.filter(c => !c.isTestnet).slice(0, 8);
 
@@ -659,6 +659,105 @@ function SecurityTab({ onLogout }: { onLogout: () => void }) {
   );
 }
 
+// ── API Keys Tab ───────────────────────────────────────────────────────────────
+function ApiKeysTab() {
+  const store = getAdminStore();
+  const [circleApiKey, setCircleApiKeyState] = useState(store.siteInfo.circleApiKey ?? '');
+  const [circleAppId, setCircleAppIdState] = useState(store.siteInfo.circleAppId ?? '');
+  const [launchpadAddress, setLaunchpadAddressState] = useState(store.siteInfo.launchpadAddress ?? '');
+  const [showKey, setShowKey] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    saveSiteInfo({ ...store.siteInfo, circleApiKey, circleAppId, launchpadAddress });
+    setSaved(true);
+    toast.success('Keys saved locally');
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const inputClass = 'w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-4 py-3 text-sm text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 mono';
+  const labelClass = 'block text-xs font-semibold text-[var(--subtle)] uppercase tracking-wide mb-1.5';
+
+  return (
+    <div className="h-full overflow-y-auto p-4 space-y-5">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 space-y-5">
+        <div className="flex items-center gap-2">
+          <Key size={16} className="text-[var(--accent)]" />
+          <h2 className="text-sm font-semibold text-[var(--ink)]">Circle Console Credentials</h2>
+        </div>
+        <p className="text-xs text-[var(--subtle)]">
+          Stored locally in your browser only — never sent to any server. Used to power the built-in wallet and Circle SDK features.
+        </p>
+
+        <div>
+          <label className={labelClass}>Circle API Key</label>
+          <div className="relative">
+            <input
+              type={showKey ? 'text' : 'password'}
+              className={inputClass}
+              placeholder="TEST_API_KEY:… or LIVE_API_KEY:…"
+              value={circleApiKey}
+              onChange={e => setCircleApiKeyState(e.target.value)}
+            />
+            <button type="button" onClick={() => setShowKey(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--subtle)] hover:text-[var(--ink)]">
+              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+          <p className="text-[10px] text-[var(--subtle)] mt-1">From console.circle.com → API Keys</p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Circle App ID</label>
+          <input
+            type="text"
+            className={inputClass}
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            value={circleAppId}
+            onChange={e => setCircleAppIdState(e.target.value)}
+          />
+          <p className="text-[10px] text-[var(--subtle)] mt-1">From console.circle.com → Wallets → User Controlled → Configurator</p>
+        </div>
+
+        <div className="border-t border-[var(--border)] pt-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Code2 size={14} className="text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--ink)]">Contract Addresses</h3>
+          </div>
+          <div>
+            <label className={labelClass}>ArcLaunchpad Contract Address (Arc Mainnet)</label>
+            <input
+              type="text"
+              className={inputClass}
+              placeholder="0x… (overrides compiled-in address)"
+              value={launchpadAddress}
+              onChange={e => setLaunchpadAddressState(e.target.value)}
+            />
+            <p className="text-[10px] text-[var(--subtle)] mt-1">
+              Deploy with <code className="bg-[var(--surface-muted)] px-1 rounded">forge script contracts/script/DeployCreate2.s.sol</code> on Arc Mainnet, then paste the address here.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={handleSave}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-[var(--accent)] hover:opacity-90 transition-opacity"
+        >
+          {saved ? <><Check size={14} /> Saved</> : <><Save size={14} /> Save Keys</>}
+        </button>
+      </div>
+
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+        <p className="text-xs font-semibold text-[var(--subtle)] uppercase tracking-wide mb-2">Security Note</p>
+        <p className="text-xs text-[var(--subtle)] leading-relaxed">
+          These credentials are stored in <code className="bg-[var(--surface-muted)] px-1 rounded">localStorage</code> and are only accessible to whoever can unlock this Admin Panel.
+          They are never transmitted to Glowpad servers — all Circle API calls are made directly from your browser.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Main AdminPanel ────────────────────────────────────────────────────────────
 export function AdminPanel() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -674,6 +773,7 @@ export function AdminPanel() {
     { key: 'tokens',    label: 'Tokens',     icon: Coins },
     { key: 'fees',      label: 'Fees',       icon: DollarSign },
     { key: 'security',  label: 'Security',   icon: ShieldAlert },
+    { key: 'apikeys',   label: 'API Keys',   icon: Key },
   ];
 
   return (
@@ -716,6 +816,7 @@ export function AdminPanel() {
         {tab === 'tokens'    && <TokensTab />}
         {tab === 'fees'      && <FeesTab />}
         {tab === 'security'  && <SecurityTab onLogout={() => setAuthenticated(false)} />}
+        {tab === 'apikeys'   && <ApiKeysTab />}
       </div>
     </div>
   );

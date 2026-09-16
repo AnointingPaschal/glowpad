@@ -76,6 +76,14 @@ export interface UseWalletReturn {
   setActiveChainId: (id: number) => void;
   exportPrivateKey: (password: string) => Promise<string>;
   exportMnemonic: (password: string) => Promise<string>;
+  callContract: (
+    contractAddress: string,
+    abi: ethers.InterfaceAbi,
+    functionName: string,
+    args: unknown[],
+    password: string,
+    value?: bigint,
+  ) => Promise<string>;
 }
 
 export function useWallet(): UseWalletReturn {
@@ -365,6 +373,27 @@ export function useWallet(): UseWalletReturn {
     return phrase;
   }, [activeWallet]);
 
+  // ── callContract — generic write to any contract ─────────────────────────────
+  const callContract = useCallback(async (
+    contractAddress: string,
+    abi: ethers.InterfaceAbi,
+    functionName: string,
+    args: unknown[],
+    password: string,
+    value?: bigint,
+  ): Promise<string> => {
+    if (!activeWallet) throw new Error('No active wallet');
+    const signer = await decryptWallet(activeWallet, password);
+    const chain = requireChain(activeChainId);
+    const provider = new ethers.JsonRpcProvider(chain.rpcUrls[0]);
+    const connected = signer.connect(provider);
+    const contract = new ethers.Contract(contractAddress, abi, connected);
+    const fn = contract[functionName];
+    if (typeof fn !== 'function') throw new Error(`Function ${functionName} not found in ABI`);
+    const tx = await (fn(...args, ...(value !== undefined ? [{ value }] : [])) as Promise<ethers.TransactionResponse>);
+    return tx.hash;
+  }, [activeWallet, activeChainId]);
+
   const customTokens = getCustomTokens();
 
   return {
@@ -397,5 +426,6 @@ export function useWallet(): UseWalletReturn {
     setActiveChainId,
     exportPrivateKey,
     exportMnemonic,
+    callContract,
   };
 }
