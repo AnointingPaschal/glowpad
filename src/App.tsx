@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { ConnectKitButton } from 'connectkit';
 import {
   Code2, Cpu, Search, ChevronRight, Zap,
   BookOpen, ExternalLink, Menu, X, Rocket,
@@ -14,6 +13,8 @@ import { TxExplorer } from './components/ide/TxExplorer';
 import { DexScreen } from './components/dex/DexScreen';
 import { WalletPage } from './wallet/WalletPage';
 import { AdminPanel } from './admin/AdminPanel';
+import { useWallet } from './wallet/useWallet';
+import { WalletContext } from './wallet/walletContext';
 
 // ── Navigation items ───────────────────────────────────────────────────────
 type NavKey = 'launchpad' | 'dex' | 'ide' | 'interact' | 'explorer' | 'wallet' | 'admin';
@@ -160,6 +161,7 @@ export default function App() {
   const [activeNav, setActiveNav] = useState<NavKey>('launchpad');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const walletCtx = useWallet();
 
   const currentItem = NAV.find(n => n.key === activeNav)!;
 
@@ -181,6 +183,7 @@ export default function App() {
   };
 
   return (
+    <WalletContext.Provider value={walletCtx}>
     <div className="flex h-[100dvh] overflow-hidden bg-[var(--bg)]">
       {/* Desktop sidebar */}
       <Sidebar active={activeNav} setActive={handleNav} collapsed={sidebarCollapsed} />
@@ -292,10 +295,14 @@ export default function App() {
 
           <div className="flex-1" />
 
-          {/* Connect button */}
-          <div className="scale-90 sm:scale-100 origin-right">
-            <ConnectKitButton />
-          </div>
+          {/* Wallet address pill */}
+          {walletCtx?.activeWallet && (
+            <button onClick={() => handleNav('wallet')}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-mono text-[var(--subtle)] bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--accent)]/40 transition-colors">
+              <Wallet size={11} />
+              {walletCtx.activeWallet.address.slice(0,6)}…{walletCtx.activeWallet.address.slice(-4)}
+            </button>
+          )}
         </header>
 
         {/* Content */}
@@ -307,5 +314,6 @@ export default function App() {
         <BottomNav active={activeNav} setActive={handleNav} />
       </div>
     </div>
+    </WalletContext.Provider>
   );
 }

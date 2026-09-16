@@ -29,6 +29,9 @@ export interface TokenBalance {
   decimals: number;
   balance: string;
   isNative: boolean;
+  usdValue?: string;
+  change24h?: string;
+  watchlisted?: boolean;
 }
 
 export interface TxRecord {
@@ -44,32 +47,35 @@ export interface TxRecord {
 export type WalletScreen = 'setup' | 'locked' | 'unlocked';
 
 export interface UseWalletReturn {
-  // State
   screen: WalletScreen;
   wallets: WalletEntry[];
   activeWallet: WalletEntry | null;
   balances: TokenBalance[];
-  customTokens: CustomToken[];
+  history: TxRecord[];
   txHistory: TxRecord[];
+  customTokens: CustomToken[];
   isLoadingBalances: boolean;
   isLoadingHistory: boolean;
+  balancesLoaded: boolean;
   activeChainId: number;
-
-  // Actions
   setup: (name: string, password: string) => Promise<void>;
   unlock: (password: string) => Promise<void>;
   lock: () => void;
   createNew: (name: string, password: string) => Promise<void>;
   importExisting: (name: string, secret: string, password: string) => Promise<void>;
   selectWallet: (id: string) => void;
+  setActiveWallet: (idx: number) => void;
   removeWalletById: (id: string) => void;
-  addCustomToken: (token: CustomToken) => void;
+  addCustomToken: (address: string, symbol: string, name: string, decimals: number) => void;
   removeCustomToken: (address: string, chainId: number) => void;
+  lookupToken: (address: string) => Promise<{ symbol: string; name: string; decimals: number }>;
   refreshBalances: () => Promise<void>;
   refreshHistory: () => Promise<void>;
   sendNative: (to: string, amount: string, password: string) => Promise<string>;
   sendToken: (tokenAddress: string, to: string, amount: string, decimals: number, password: string) => Promise<string>;
   setActiveChainId: (id: number) => void;
+  exportPrivateKey: (password: string) => Promise<string>;
+  exportMnemonic: (password: string) => Promise<string>;
 }
 
 export function useWallet(): UseWalletReturn {
@@ -85,6 +91,7 @@ export function useWallet(): UseWalletReturn {
   const [txHistory, setTxHistory] = useState<TxRecord[]>([]);
   const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [balancesLoaded, setBalancesLoaded] = useState(false);
   const [activeChainId, setActiveChainId] = useState(5042); // Arc Mainnet
   const [_sessionPw, setSessionPw] = useState(''); // held in memory during session
 
@@ -158,6 +165,7 @@ export function useWallet(): UseWalletReturn {
       );
 
       setBalances(results);
+      setBalancesLoaded(true);
     } catch (e) {
       console.error('Balance fetch failed:', e);
     } finally {
@@ -272,9 +280,6 @@ export function useWallet(): UseWalletReturn {
   }, []);
 
   // ── Custom tokens ────────────────────────────────────────────────────────────
-  const addToken = useCallback((token: CustomToken) => {
-    addCustomToken(token);
-  }, []);
 
   const removeToken = useCallback((address: string, chainId: number) => {
     removeCustomToken(address, chainId);
@@ -315,6 +320,51 @@ export function useWallet(): UseWalletReturn {
     return tx.hash;
   }, [activeWallet, activeChainId]);
 
+  // ── setActiveWallet by index ─────────────────────────────────────────────────
+  const setActiveWalletByIndex = useCallback((idx: number) => {
+    const w = wallets[idx];
+    if (w) { setActiveWallet(w.id); setActiveWalletIdState(w.id); setBalances([]); setBalancesLoaded(false); }
+  }, [wallets]);
+
+  // ── addCustomToken (flat signature for dashboard) ────────────────────────────
+  const addTokenFlat = useCallback((address: string, symbol: string, name: string, decimals: number) => {
+    addCustomToken({ address, symbol, name, decimals, chainId: activeChainId });
+  }, [activeChainId]);
+
+  // ── lookupToken ──────────────────────────────────────────────────────────────
+  const lookupToken = useCallback(async (address: string) => {
+    const chain = requireChain(activeChainId);
+    const provider = new ethers.JsonRpcProvider(chain.rpcUrls[0]);
+    const c = new ethers.Contract(address, [
+      'function symbol() view returns (string)',
+      'function name() view returns (string)',
+      'function decimals() view returns (uint8)',
+    ], provider);
+    const [symbol, name, decimals] = await Promise.all([
+      c.symbol() as Promise<string>,
+      c.name() as Promise<string>,
+      c.decimals() as Promise<number>,
+    ]);
+    return { symbol, name, decimals };
+  }, [activeChainId]);
+
+  // ── exportPrivateKey ─────────────────────────────────────────────────────────
+  const exportPrivateKey = useCallback(async (password: string) => {
+    if (!activeWallet) throw new Error('No active wallet');
+    const signer = await decryptWallet(activeWallet, password);
+    if (!('privateKey' in signer)) throw new Error('Cannot export private key from this wallet type');
+    return signer.privateKey;
+  }, [activeWallet]);
+
+  // ── exportMnemonic ───────────────────────────────────────────────────────────
+  const exportMnemonic = useCallback(async (password: string) => {
+    if (!activeWallet) throw new Error('No active wallet');
+    const signer = await decryptWallet(activeWallet, password);
+    const phrase = (signer as ethers.HDNodeWallet).mnemonic?.phrase;
+    if (!phrase) throw new Error('No mnemonic for this wallet (imported via private key)');
+    return phrase;
+  }, [activeWallet]);
+
   const customTokens = getCustomTokens();
 
   return {
@@ -322,10 +372,12 @@ export function useWallet(): UseWalletReturn {
     wallets,
     activeWallet,
     balances,
+    history: txHistory,
     customTokens,
     txHistory,
     isLoadingBalances,
     isLoadingHistory,
+    balancesLoaded,
     activeChainId,
     setup,
     unlock,
@@ -333,13 +385,17 @@ export function useWallet(): UseWalletReturn {
     createNew,
     importExisting,
     selectWallet,
+    setActiveWallet: setActiveWalletByIndex,
     removeWalletById,
-    addCustomToken: addToken,
+    addCustomToken: addTokenFlat,
     removeCustomToken: removeToken,
+    lookupToken,
     refreshBalances,
     refreshHistory,
     sendNative,
     sendToken,
     setActiveChainId,
+    exportPrivateKey,
+    exportMnemonic,
   };
 }

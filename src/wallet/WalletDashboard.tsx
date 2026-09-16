@@ -1,974 +1,769 @@
 /**
- * WalletDashboard — main wallet UI: balance, send, receive, swap, CCTP bridge,
- * history, custom tokens, and settings.
+ * WalletDashboard — finance-app UI (dark mode)
+ * Layout: Home | Explore | Assets | Wallet | Settings  (bottom nav)
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  ArrowUpRight, ArrowDownLeft, ArrowLeftRight, Link2,
-  Clock, Plus, Copy, Check, ExternalLink, Trash2,
-  ChevronDown, Settings, Lock, RefreshCw, Eye,
-  EyeOff, AlertTriangle, X, Loader2, Coins,
+  Home, Compass, BarChart3, Wallet, Settings2,
+  Eye, EyeOff, Search, Bell, ArrowUpRight, ArrowDownLeft,
+  RefreshCw, Plus, Send, Download, Repeat2,
+  Copy, Check, ExternalLink, ChevronRight, Loader2,
+  AlertTriangle, Lock, Key, Shield,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useAccount } from 'wagmi';
-import { createViemAdapterFromProvider } from '@circle-fin/adapter-viem-v2';
-import { AppKit } from '@circle-fin/app-kit';
-// SwapChainIdentifier and BridgeChainIdentifier are internal to app-kit — use string
-type SwapChainIdentifier = string;
-type BridgeChainIdentifier = string;
-import type { EIP1193Provider } from 'viem';
-import { ethers } from 'ethers';
-import type { UseWalletReturn } from './useWallet';
-import { exportPrivateKey, exportMnemonic } from './walletStore';
-import { ONCHAIN_CHAINS, buildTxExplorerUrl, requireChain } from '@/onchain-facts';
-import type { CustomToken } from './walletStore';
+import {
+  LineChart, Line, AreaChart, Area,
+  XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from 'recharts';
+import type { UseWalletReturn, TokenBalance } from './useWallet';
+import { TokenLogo, TokenDetail } from './TokenDetail';
+import { buildTxExplorerUrl } from '@/onchain-facts';
 
-const appKit = new AppKit();
-
-const SWAP_CHAINS = [
-  'Arc', 'Ethereum', 'Base', 'Arbitrum', 'Polygon', 'Avalanche', 'Optimism',
-] as const;
-
-const SUPPORTED_TOKENS = ['USDC', 'USDT', 'WETH', 'NATIVE'] as const;
-
-const DISPLAY_CHAINS = ONCHAIN_CHAINS.filter(c => !c.isTestnet).slice(0, 8);
-
-type Tab = 'assets' | 'send' | 'receive' | 'swap' | 'bridge' | 'history' | 'settings';
-
-function fmt(addr: string) {
-  return addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
+// ── helpers ───────────────────────────────────────────────────────────────────
+function usd(n: number, dp = 2) {
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: dp, maximumFractionDigits: dp });
+}
+function pct(n: number) {
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
+}
+function shortAddr(a: string) {
+  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '';
 }
 
-function fmtNum(n: string | number, dp = 4) {
-  const f = parseFloat(String(n));
-  if (isNaN(f)) return '0.00';
-  if (f === 0) return '0.00';
-  return f.toFixed(dp);
+// Tiny sparkline — random walk around a change value
+function sparkData(change: number, pts = 12) {
+  let v = 100;
+  return Array.from({ length: pts }, (_, i) => {
+    const drift = (change / pts) * (0.5 + Math.random());
+    v = Math.max(v + drift + (Math.random() - 0.5) * 2, 10);
+    return { i, v };
+  });
 }
 
-// ── Copy button ───────────────────────────────────────────────────────────────
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    void navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
+function Sparkline({ change, width = 64, height = 32 }: { change: number; width?: number; height?: number }) {
+  const data = sparkData(change);
+  const color = change >= 0 ? '#22c55e' : '#ef4444';
   return (
-    <button onClick={copy} className="p-1 rounded text-[var(--subtle)] hover:text-[var(--ink)] transition-colors">
-      {copied ? <Check size={13} className="text-[var(--success)]" /> : <Copy size={13} />}
-    </button>
+    <ResponsiveContainer width={width} height={height}>
+      <LineChart data={data}>
+        <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
-// ── Password modal ────────────────────────────────────────────────────────────
-function PwModal({
-  title,
-  onConfirm,
-  onCancel,
-  loading,
-  error,
-}: {
-  title: string;
-  onConfirm: (pw: string) => void;
-  onCancel: () => void;
-  loading: boolean;
-  error?: string;
+// ── portfolio sparkline (bigger) ──────────────────────────────────────────────
+function PortfolioChart({ totalUsd }: { totalUsd: number }) {
+  const data = sparkData(8.42, 30).map((d, i) => ({ ...d, t: i }));
+  return (
+    <ResponsiveContainer width="100%" height={80}>
+      <AreaChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#4e9ff5" stopOpacity={0.4} />
+            <stop offset="95%" stopColor="#4e9ff5" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area type="monotone" dataKey="v" stroke="#4e9ff5" strokeWidth={2} fill="url(#pg)" dot={false} />
+        <XAxis hide />
+        <YAxis hide />
+        <Tooltip
+          contentStyle={{ background: 'var(--surface-muted)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 10, color: 'var(--ink)' }}
+          formatter={(v) => [`$${((v as number) / 100 * totalUsd).toFixed(2)}`, '']}
+          labelFormatter={() => ''}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── password modal ────────────────────────────────────────────────────────────
+function PwModal({ title, onConfirm, onCancel, loading, error }: {
+  title: string; onConfirm: (pw: string) => void;
+  onCancel: () => void; loading: boolean; error?: string;
 }) {
   const [pw, setPw] = useState('');
-  const [show, setShow] = useState(false);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-xs bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-[var(--ink)]">{title}</p>
-          <button onClick={onCancel} className="text-[var(--subtle)] hover:text-[var(--ink)]"><X size={16} /></button>
-        </div>
-        <div className="relative">
-          <input
-            type={show ? 'text' : 'password'}
-            className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-sm text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-            placeholder="Wallet password"
-            value={pw}
-            onChange={e => setPw(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') onConfirm(pw); }}
-            autoFocus
-          />
-          <button type="button" onClick={() => setShow(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--subtle)]">
-            {show ? <EyeOff size={13} /> : <Eye size={13} />}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-xs rounded-3xl p-6 space-y-4 bg-[var(--surface)] border border-[var(--border)]">
+        <p className="text-sm font-semibold text-[var(--ink)]">{title}</p>
+        <input type="password" autoFocus
+          className="w-full px-4 py-3 rounded-2xl text-sm bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--ink)] focus:outline-none"
+          placeholder="Wallet password" value={pw}
+          onChange={e => setPw(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onConfirm(pw); }} />
+        {error && <p className="text-xs text-[var(--danger)] flex items-center gap-1"><AlertTriangle size={12} />{error}</p>}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-3 rounded-2xl text-sm text-[var(--subtle)] border border-[var(--border)]">Cancel</button>
+          <button onClick={() => onConfirm(pw)} disabled={loading || !pw}
+            className="flex-1 py-3 rounded-2xl text-sm font-semibold text-white bg-[var(--accent)] disabled:opacity-40 flex items-center justify-center gap-2">
+            {loading && <Loader2 size={14} className="animate-spin" />}Confirm
           </button>
         </div>
-        {error && <p className="text-xs text-[var(--danger)] flex items-center gap-1"><AlertTriangle size={12} />{error}</p>}
-        <button
-          onClick={() => onConfirm(pw)}
-          disabled={loading || !pw}
-          className="w-full py-2.5 rounded-xl text-sm font-semibold bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2"
-        >
-          {loading && <Loader2 size={14} className="animate-spin" />}
-          Confirm
-        </button>
       </div>
     </div>
   );
 }
 
-// ── Assets tab ────────────────────────────────────────────────────────────────
-function AssetsTab({ wallet }: { wallet: UseWalletReturn }) {
-  const [addTokenMode, setAddTokenMode] = useState(false);
-  const [tokenAddr, setTokenAddr] = useState('');
-  const [fetchingToken, setFetchingToken] = useState(false);
-  const [tokenError, setTokenError] = useState('');
+// ── AddToken modal ────────────────────────────────────────────────────────────
+function AddTokenModal({ wallet, onClose }: { wallet: UseWalletReturn; onClose: () => void }) {
+  const [addr, setAddr] = useState('');
+  const [info, setInfo] = useState<{ symbol: string; name: string; decimals: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
 
-  const lookupAndAddToken = async () => {
-    if (!ethers.isAddress(tokenAddr)) { setTokenError('Invalid address'); return; }
-    setFetchingToken(true); setTokenError('');
+  const lookup = async () => {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) { setErr('Invalid address'); return; }
+    setLoading(true); setErr('');
     try {
-      const chain = requireChain(wallet.activeChainId);
-      const provider = new ethers.JsonRpcProvider(chain.rpcUrls[0]);
-      const contract = new ethers.Contract(tokenAddr, [
-        'function symbol() view returns (string)',
-        'function name() view returns (string)',
-        'function decimals() view returns (uint8)',
-      ], provider);
-      const [symbol, name, decimals] = await Promise.all([
-        contract.symbol() as Promise<string>,
-        contract.name() as Promise<string>,
-        contract.decimals() as Promise<number>,
-      ]);
-      const token: CustomToken = {
-        chainId: wallet.activeChainId,
-        address: tokenAddr,
-        symbol,
-        name,
-        decimals,
-      };
-      wallet.addCustomToken(token);
-      await wallet.refreshBalances();
-      setAddTokenMode(false);
-      setTokenAddr('');
-      toast.success(`${symbol} added`);
-    } catch {
-      setTokenError('Failed to fetch token info. Check the address.');
-    } finally {
-      setFetchingToken(false);
-    }
+      const meta = await wallet.lookupToken(addr);
+      setInfo(meta);
+    } catch (e) { setErr((e as Error).message); }
+    finally { setLoading(false); }
+  };
+
+  const add = () => {
+    if (!info) return;
+    wallet.addCustomToken(addr, info.symbol, info.name, info.decimals);
+    toast.success(`${info.symbol} added`);
+    onClose();
   };
 
   return (
-    <div className="space-y-3 px-4 py-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-[var(--subtle)] uppercase tracking-wider">Assets</p>
-        <button onClick={() => { void wallet.refreshBalances(); }} className="p-1 text-[var(--subtle)] hover:text-[var(--ink)] transition-colors">
-          <RefreshCw size={12} className={wallet.isLoadingBalances ? 'animate-spin' : ''} />
-        </button>
-      </div>
-
-      {wallet.isLoadingBalances && wallet.balances.length === 0 && (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 size={20} className="animate-spin text-[var(--accent)]" />
-        </div>
-      )}
-
-      {wallet.balances.map(b => (
-        <div key={b.address} className="flex items-center gap-3 bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3">
-          <div className="w-9 h-9 rounded-full bg-[var(--accent)]/10 flex items-center justify-center shrink-0 text-xs font-bold text-[var(--accent)]">
-            {b.symbol.slice(0, 2)}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-xs rounded-3xl p-6 space-y-4 bg-[var(--surface)] border border-[var(--border)]">
+        <p className="text-sm font-semibold text-[var(--ink)]">Add Custom Token</p>
+        <input className="w-full px-4 py-3 rounded-2xl text-xs font-mono bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--ink)] focus:outline-none"
+          placeholder="0x contract address" value={addr} onChange={e => setAddr(e.target.value)} />
+        {err && <p className="text-xs text-[var(--danger)] flex items-center gap-1"><AlertTriangle size={12} />{err}</p>}
+        {info && (
+          <div className="bg-[var(--surface-muted)] rounded-2xl p-3 text-xs text-[var(--ink)] space-y-1">
+            <p><span className="text-[var(--subtle)]">Name: </span>{info.name}</p>
+            <p><span className="text-[var(--subtle)]">Symbol: </span>{info.symbol}</p>
+            <p><span className="text-[var(--subtle)]">Decimals: </span>{info.decimals}</p>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[var(--ink)]">{b.symbol}</p>
-            <p className="text-xs text-[var(--subtle)] truncate">{b.name}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm font-bold tabular-nums text-[var(--ink)]">{fmtNum(b.balance)}</p>
-            {!b.isNative && (
-              <button
-                onClick={() => wallet.removeCustomToken(b.address, wallet.activeChainId)}
-                className="text-[10px] text-[var(--subtle)] hover:text-[var(--danger)] transition-colors"
-              >
-                Remove
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
-
-      {wallet.balances.length === 0 && !wallet.isLoadingBalances && (
-        <p className="text-center text-xs text-[var(--subtle)] py-6">No tokens. Connect to load balances.</p>
-      )}
-
-      {addTokenMode ? (
-        <div className="bg-[var(--surface)] border border-[var(--accent)]/30 rounded-xl p-4 space-y-3">
-          <p className="text-xs font-semibold text-[var(--ink)]">Add Custom Token</p>
-          <input
-            className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-xs font-mono text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none"
-            placeholder="Token contract address (0x...)"
-            value={tokenAddr}
-            onChange={e => setTokenAddr(e.target.value)}
-          />
-          {tokenError && <p className="text-xs text-[var(--danger)]">{tokenError}</p>}
-          <div className="flex gap-2">
-            <button onClick={() => { setAddTokenMode(false); setTokenAddr(''); setTokenError(''); }} className="flex-1 py-2 rounded-lg text-xs text-[var(--muted)] bg-[var(--surface-muted)] border border-[var(--border)]">Cancel</button>
-            <button onClick={() => { void lookupAndAddToken(); }} disabled={fetchingToken} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-1">
-              {fetchingToken && <Loader2 size={12} className="animate-spin" />}
-              Add Token
+        )}
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm text-[var(--subtle)] border border-[var(--border)]">Cancel</button>
+          {info
+            ? <button onClick={add} className="flex-1 py-3 rounded-2xl text-sm font-semibold text-white bg-[var(--accent)]">Add Token</button>
+            : <button onClick={() => { void lookup(); }} disabled={loading || !addr} className="flex-1 py-3 rounded-2xl text-sm font-semibold text-white bg-[var(--accent)] disabled:opacity-40 flex items-center justify-center gap-2">
+              {loading && <Loader2 size={14} className="animate-spin" />}Look up
             </button>
-          </div>
+          }
         </div>
-      ) : (
-        <button
-          onClick={() => setAddTokenMode(true)}
-          className="w-full py-2.5 rounded-xl text-xs font-medium border border-dashed border-[var(--border)] text-[var(--subtle)] hover:border-[var(--accent)]/40 hover:text-[var(--accent)] transition-colors flex items-center justify-center gap-1.5"
-        >
-          <Plus size={12} /> Add Custom Token
-        </button>
-      )}
+      </div>
     </div>
   );
 }
 
-// ── Send tab ──────────────────────────────────────────────────────────────────
-function SendTab({ wallet }: { wallet: UseWalletReturn }) {
+// ── Send modal ────────────────────────────────────────────────────────────────
+function SendModal({ wallet, onClose }: { wallet: UseWalletReturn; onClose: () => void }) {
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
-  const [selectedToken, setSelectedToken] = useState<string | null>(null);
-  const [txHash, setTxHash] = useState('');
-  const [showPwModal, setShowPwModal] = useState(false);
+  const [tokenIdx, setTokenIdx] = useState(0);
+  const [pw, setPw] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [err, setErr] = useState('');
+  const [txHash, setTxHash] = useState('');
 
-  const token = selectedToken ? wallet.balances.find(b => b.address === selectedToken) : wallet.balances[0];
+  const selectedToken = wallet.balances[tokenIdx];
 
-  const submit = async (pw: string) => {
-    if (!to || !amount) { setError('Fill in all fields'); return; }
-    if (!ethers.isAddress(to)) { setError('Invalid address'); return; }
-    setLoading(true); setError('');
+  const send = async () => {
+    if (!selectedToken || !to || !amount || !pw) return;
+    setLoading(true); setErr('');
     try {
       let hash: string;
-      if (!token || token.isNative) {
+      if (selectedToken.isNative) {
         hash = await wallet.sendNative(to, amount, pw);
       } else {
-        hash = await wallet.sendToken(token.address, to, amount, token.decimals, pw);
+        hash = await wallet.sendToken(selectedToken.address, to, amount, selectedToken.decimals, pw);
       }
       setTxHash(hash);
-      setShowPwModal(false);
-      toast.success('Transaction sent');
+      toast.success('Transaction sent!');
       await wallet.refreshBalances();
-      await wallet.refreshHistory();
-    } catch (e) {
-      setError((e as Error).message.slice(0, 80));
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setErr((e as Error).message.slice(0, 80)); }
+    finally { setLoading(false); }
   };
 
   return (
-    <div className="px-4 py-3 space-y-4">
-      {showPwModal && (
-        <PwModal
-          title="Confirm Send"
-          onConfirm={pw => { void submit(pw); }}
-          onCancel={() => setShowPwModal(false)}
-          loading={loading}
-          error={error}
-        />
-      )}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-xs rounded-3xl p-6 space-y-4 bg-[var(--surface)] border border-[var(--border)]">
+        <p className="text-sm font-semibold text-[var(--ink)]">Send</p>
+        {txHash ? (
+          <div className="text-center space-y-3 py-2">
+            <Check size={28} className="mx-auto text-[var(--success)]" />
+            <p className="text-sm font-semibold text-[var(--ink)]">Sent!</p>
+            <a href={buildTxExplorerUrl(wallet.activeChainId, txHash)} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-[var(--accent)] flex items-center justify-center gap-1">
+              <ExternalLink size={11} />View on Explorer
+            </a>
+            <button onClick={onClose} className="text-xs text-[var(--subtle)]">Close</button>
+          </div>
+        ) : (
+          <>
+            <select className="w-full px-4 py-3 rounded-2xl text-sm bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--ink)] focus:outline-none"
+              value={tokenIdx} onChange={e => setTokenIdx(Number(e.target.value))}>
+              {wallet.balances.map((b, i) => (
+                <option key={b.address} value={i}>{b.symbol} — {parseFloat(b.balance).toFixed(4)}</option>
+              ))}
+            </select>
+            <input className="w-full px-4 py-3 rounded-2xl text-xs font-mono bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--ink)] focus:outline-none"
+              placeholder="Recipient address (0x…)" value={to} onChange={e => setTo(e.target.value)} />
+            <div className="flex gap-2">
+              <input type="number" className="flex-1 px-4 py-3 rounded-2xl text-sm bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--ink)] focus:outline-none"
+                placeholder="Amount" value={amount} onChange={e => setAmount(e.target.value)} />
+              <button onClick={() => setAmount(parseFloat(selectedToken?.balance ?? '0').toFixed(6))}
+                className="px-3 py-2 rounded-2xl text-xs font-semibold text-[var(--accent)] bg-[var(--surface-muted)] border border-[var(--border)]">Max</button>
+            </div>
+            <input type="password" className="w-full px-4 py-3 rounded-2xl text-sm bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--ink)] focus:outline-none"
+              placeholder="Wallet password" value={pw} onChange={e => setPw(e.target.value)} />
+            {err && <p className="text-xs text-[var(--danger)] flex items-center gap-1"><AlertTriangle size={12} />{err}</p>}
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm text-[var(--subtle)] border border-[var(--border)]">Cancel</button>
+              <button onClick={() => { void send(); }} disabled={loading || !to || !amount || !pw}
+                className="flex-1 py-3 rounded-2xl text-sm font-semibold text-white bg-[var(--accent)] disabled:opacity-40 flex items-center justify-center gap-2">
+                {loading && <Loader2 size={14} className="animate-spin" />}Send
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
-      {txHash ? (
-        <div className="bg-[var(--success)]/8 border border-[var(--success)]/20 rounded-2xl p-5 text-center space-y-3">
-          <Check size={32} className="mx-auto text-[var(--success)]" />
-          <p className="text-sm font-semibold text-[var(--ink)]">Transaction Sent!</p>
-          <p className="text-xs font-mono text-[var(--subtle)] break-all">{txHash}</p>
-          <a
-            href={buildTxExplorerUrl(wallet.activeChainId, txHash)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-1 text-xs text-[var(--accent)] hover:opacity-80"
-          >
-            <ExternalLink size={12} /> View on Explorer
-          </a>
-          <button onClick={() => setTxHash('')} className="mt-2 text-xs text-[var(--subtle)] hover:text-[var(--ink)]">Send another</button>
+// ── ReceiveModal ──────────────────────────────────────────────────────────────
+function ReceiveModal({ wallet, onClose }: { wallet: UseWalletReturn; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const addr = wallet.activeWallet?.address ?? '';
+  const copy = () => {
+    void navigator.clipboard.writeText(addr);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-xs rounded-3xl p-6 space-y-5 bg-[var(--surface)] border border-[var(--border)]">
+        <p className="text-sm font-semibold text-[var(--ink)]">Receive</p>
+        {/* QR placeholder — static pattern */}
+        <div className="w-36 h-36 mx-auto rounded-2xl bg-white flex items-center justify-center p-3">
+          <div className="w-full h-full grid grid-cols-9 gap-px">
+            {[1,0,1,0,1,1,0,1,0, 0,1,1,0,1,0,1,0,1, 1,0,0,1,1,0,0,1,1, 0,1,0,0,0,1,0,0,0,
+              1,1,1,0,1,1,1,0,1, 0,0,1,0,0,0,1,1,0, 1,0,1,1,0,1,0,0,1, 0,1,0,1,1,0,1,0,0,
+              1,1,0,0,1,0,1,1,0].map((v, i) => (
+              <div key={i} className="rounded-sm" style={{ background: v ? '#000' : 'transparent' }} />
+            ))}
+          </div>
         </div>
-      ) : (
-        <>
-          <div>
-            <label className="text-xs text-[var(--subtle)] mb-1.5 block">Token</label>
-            <div className="relative">
-              <select
-                className="w-full appearance-none bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-sm text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-                value={selectedToken ?? ''}
-                onChange={e => setSelectedToken(e.target.value || null)}
-              >
-                {wallet.balances.map(b => (
-                  <option key={b.address} value={b.address}>
-                    {b.symbol} ({fmtNum(b.balance, 4)})
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--subtle)] pointer-events-none" />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-[var(--subtle)] mb-1.5 block">Recipient address</label>
-            <input
-              className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-xs font-mono text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-              placeholder="0x..."
-              value={to}
-              onChange={e => setTo(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs text-[var(--subtle)]">Amount</label>
-              {token && (
-                <button
-                  onClick={() => setAmount(fmtNum(token.balance, 6))}
-                  className="text-[10px] text-[var(--accent)] hover:opacity-80"
-                >
-                  Max: {fmtNum(token.balance, 4)} {token.symbol}
-                </button>
-              )}
-            </div>
-            <input
-              type="number"
-              className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-sm text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-              placeholder="0.00"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-            />
-          </div>
-
-          {error && <p className="text-xs text-[var(--danger)] flex items-center gap-1"><AlertTriangle size={12} />{error}</p>}
-
-          <button
-            onClick={() => setShowPwModal(true)}
-            disabled={!to || !amount || wallet.balances.length === 0}
-            className="w-full py-3 rounded-xl text-sm font-semibold bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2"
-          >
-            <ArrowUpRight size={16} /> Send
+        <div className="bg-[var(--surface-muted)] rounded-2xl px-4 py-3 flex items-center gap-3 border border-[var(--border)]">
+          <p className="flex-1 text-xs font-mono text-[var(--ink)] truncate">{addr}</p>
+          <button onClick={copy} className="text-[var(--subtle)] hover:text-[var(--accent)]">
+            {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Receive tab ───────────────────────────────────────────────────────────────
-function ReceiveTab({ wallet }: { wallet: UseWalletReturn }) {
-  if (!wallet.activeWallet) return null;
-  const addr = wallet.activeWallet.address;
-
-  return (
-    <div className="flex flex-col items-center px-4 py-6 space-y-5">
-      {/* QR placeholder — SVG-based, not an image */}
-      <div className="w-48 h-48 bg-white rounded-2xl flex items-center justify-center border border-[var(--border)] p-3">
-        <svg viewBox="0 0 200 200" className="w-full h-full">
-          {/* Simple QR placeholder pattern */}
-          <rect width="200" height="200" fill="white" />
-          <rect x="10" y="10" width="60" height="60" fill="none" stroke="black" strokeWidth="8" />
-          <rect x="30" y="30" width="20" height="20" fill="black" />
-          <rect x="130" y="10" width="60" height="60" fill="none" stroke="black" strokeWidth="8" />
-          <rect x="150" y="30" width="20" height="20" fill="black" />
-          <rect x="10" y="130" width="60" height="60" fill="none" stroke="black" strokeWidth="8" />
-          <rect x="30" y="150" width="20" height="20" fill="black" />
-          <text x="100" y="108" textAnchor="middle" fontSize="9" fill="black" fontFamily="monospace">SCAN ADDRESS</text>
-        </svg>
-      </div>
-
-      <div className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 flex items-center gap-2">
-        <p className="flex-1 text-xs font-mono text-[var(--ink)] break-all">{addr}</p>
-        <CopyButton text={addr} />
-      </div>
-
-      <div className="w-full bg-[var(--accent)]/8 border border-[var(--accent)]/20 rounded-xl p-3 text-xs text-[var(--accent)] space-y-1">
-        <p className="font-semibold">Only send compatible tokens</p>
-        <p className="text-[var(--muted)]">Ensure the sender is on the correct chain: <strong>{requireChain(wallet.activeChainId).name}</strong></p>
-      </div>
-    </div>
-  );
-}
-
-// ── Swap tab (via Circle AppKit) ──────────────────────────────────────────────
-function SwapTab({ wallet: _wallet }: { wallet: UseWalletReturn }) {
-  const { connector } = useAccount();
-  const [fromChain, setFromChain] = useState<SwapChainIdentifier>('Arc');
-  const [toChain, setToChain] = useState<SwapChainIdentifier>('Arc');
-  const [tokenIn, setTokenIn] = useState<string>('USDT');
-  const [tokenOut, setTokenOut] = useState<string>('USDC');
-  const [amount, setAmount] = useState('');
-  const [status, setStatus] = useState<'idle' | 'estimating' | 'swapping' | 'done' | 'error'>('idle');
-  const [result, setResult] = useState<string>('');
-  const [error, setError] = useState('');
-  const [estimate, setEstimate] = useState<string>('');
-
-  const isArcUsdcNativeSwap =
-    (fromChain === 'Arc' || toChain === 'Arc') &&
-    ((tokenIn === 'USDC' && tokenOut === 'NATIVE') || (tokenIn === 'NATIVE' && tokenOut === 'USDC'));
-
-  const doEstimate = async () => {
-    if (!connector || !amount) return;
-    if (isArcUsdcNativeSwap) { setError('USDC and native are the same asset on Arc — no swap needed.'); return; }
-    setStatus('estimating'); setError(''); setEstimate('');
-    try {
-      const provider = (await connector.getProvider()) as EIP1193Provider;
-      const adapter = await createViemAdapterFromProvider({ provider });
-      // oxlint-disable-next-line typescript/no-unsafe-call, typescript/no-unsafe-member-access
-      const est = await (appKit as unknown as Record<string, (...a: unknown[]) => unknown>).estimateSwap({
-        from: { adapter, chain: fromChain },
-        tokenIn,
-        tokenOut,
-        amountIn: amount,
-        ...(fromChain !== toChain ? { to: { chain: toChain } } : {}),
-      }) as Record<string, unknown>;
-      const outVal = est.estimatedOutput != null ? JSON.stringify(est.estimatedOutput) : '?';
-      setEstimate(`~${outVal} ${tokenOut}`);
-      setStatus('idle');
-    } catch (e) {
-      setError((e as Error).message.slice(0, 100));
-      setStatus('error');
-    }
-  };
-
-  const doSwap = async () => {
-    if (!connector || !amount) return;
-    if (isArcUsdcNativeSwap) { setError('USDC and native are the same asset on Arc — no swap needed.'); return; }
-    setStatus('swapping'); setError('');
-    try {
-      const provider = (await connector.getProvider()) as EIP1193Provider;
-      const adapter = await createViemAdapterFromProvider({ provider });
-      // oxlint-disable-next-line typescript/no-unsafe-call, typescript/no-unsafe-member-access
-      const swapResult = await (appKit as unknown as Record<string, (...a: unknown[]) => unknown>).swap({
-        from: { adapter, chain: fromChain },
-        tokenIn,
-        tokenOut,
-        amountIn: amount,
-        ...(fromChain !== toChain ? { to: { chain: toChain } } : {}),
-      }) as Record<string, string>;
-      setResult(swapResult.txHash ?? '');
-      setStatus('done');
-      toast.success('Swap complete!');
-    } catch (e) {
-      setError((e as Error).message.slice(0, 100));
-      setStatus('error');
-    }
-  };
-
-  return (
-    <div className="px-4 py-3 space-y-4">
-      <p className="text-[10px] text-[var(--subtle)] bg-[var(--surface-muted)] rounded-lg px-2 py-1.5">
-        Swaps are routed through Circle App Kit (LiFi aggregator). Connect your browser wallet above to sign swap transactions.
-      </p>
-
-      {status === 'done' && result ? (
-        <div className="bg-[var(--success)]/8 border border-[var(--success)]/20 rounded-2xl p-5 text-center space-y-3">
-          <Check size={28} className="mx-auto text-[var(--success)]" />
-          <p className="text-sm font-semibold text-[var(--ink)]">Swap Executed</p>
-          <p className="text-xs font-mono text-[var(--subtle)] break-all">{result}</p>
-          <button onClick={() => { setStatus('idle'); setResult(''); setEstimate(''); }} className="text-xs text-[var(--accent)]">Swap again</button>
         </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs text-[var(--subtle)] mb-1 block">From chain</label>
-              <select className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-2 py-2 text-xs text-[var(--ink)] focus:outline-none" value={fromChain} onChange={e => setFromChain(e.target.value)}>
-                {SWAP_CHAINS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-[var(--subtle)] mb-1 block">To chain</label>
-              <select className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-2 py-2 text-xs text-[var(--ink)] focus:outline-none" value={toChain} onChange={e => setToChain(e.target.value)}>
-                {SWAP_CHAINS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs text-[var(--subtle)] mb-1 block">Token in</label>
-              <select className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-2 py-2 text-xs text-[var(--ink)] focus:outline-none" value={tokenIn} onChange={e => setTokenIn(e.target.value)}>
-                {SUPPORTED_TOKENS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-[var(--subtle)] mb-1 block">Token out</label>
-              <select className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-2 py-2 text-xs text-[var(--ink)] focus:outline-none" value={tokenOut} onChange={e => setTokenOut(e.target.value)}>
-                {SUPPORTED_TOKENS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-[var(--subtle)] mb-1.5 block">Amount</label>
-            <input
-              type="number"
-              className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-sm text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-              placeholder="0.00"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-            />
-          </div>
-
-          {estimate && (
-            <div className="bg-[var(--accent)]/8 border border-[var(--accent)]/20 rounded-lg px-3 py-2 text-xs text-[var(--accent)]">
-              Estimate: <strong>{estimate}</strong>
-            </div>
-          )}
-
-          {isArcUsdcNativeSwap && (
-            <p className="text-xs text-[var(--warning)] flex items-center gap-1"><AlertTriangle size={12} />USDC and native are the same asset on Arc. No swap is needed.</p>
-          )}
-
-          {error && <p className="text-xs text-[var(--danger)] flex items-center gap-1"><AlertTriangle size={12} />{error}</p>}
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => { void doEstimate(); }}
-              disabled={status === 'estimating' || !connector || !amount || isArcUsdcNativeSwap}
-              className="flex-1 py-2.5 rounded-xl text-xs font-medium border border-[var(--border)] text-[var(--ink)] hover:bg-[var(--surface-hover)] disabled:opacity-40 flex items-center justify-center gap-1"
-            >
-              {status === 'estimating' && <Loader2 size={12} className="animate-spin" />}
-              Estimate
-            </button>
-            <button
-              onClick={() => { void doSwap(); }}
-              disabled={status === 'swapping' || !connector || !amount || isArcUsdcNativeSwap}
-              className="flex-1 py-2.5 rounded-xl text-xs font-semibold bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2"
-            >
-              {status === 'swapping' && <Loader2 size={12} className="animate-spin" />}
-              <ArrowLeftRight size={14} /> Swap
-            </button>
-          </div>
-
-          {!connector && <p className="text-center text-xs text-[var(--subtle)]">Connect your browser wallet (top-right) to swap.</p>}
-        </>
-      )}
+        <button onClick={onClose} className="w-full py-3 rounded-2xl text-sm font-semibold text-[var(--subtle)] border border-[var(--border)]">Close</button>
+      </div>
     </div>
   );
 }
 
-// ── CCTP Bridge tab ────────────────────────────────────────────────────────────
-function BridgeTab() {
-  const { connector } = useAccount();
-  const [srcChain, setSrcChain] = useState<BridgeChainIdentifier>('Arc');
-  const [dstChain, setDstChain] = useState<BridgeChainIdentifier>('Base');
-  const [amount, setAmount] = useState('');
-  const [status, setStatus] = useState<'idle' | 'bridging' | 'done' | 'error'>('idle');
-  const [steps, setSteps] = useState<Array<{ name: string; state: string; txHash?: string }>>([]);
-  const [error, setError] = useState('');
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+type Tab = 'home' | 'explore' | 'assets' | 'wallet' | 'settings';
 
-  const BRIDGE_CHAINS = [
-    'Arc', 'Ethereum', 'Base', 'Arbitrum', 'Polygon', 'Avalanche', 'Optimism', 'Unichain',
+const NAV: { id: Tab; icon: typeof Home; label: string }[] = [
+  { id: 'home', icon: Home, label: 'Home' },
+  { id: 'explore', icon: Compass, label: 'Explore' },
+  { id: 'assets', icon: BarChart3, label: 'Assets' },
+  { id: 'wallet', icon: Wallet, label: 'Wallet' },
+  { id: 'settings', icon: Settings2, label: 'Settings' },
+];
+
+// ── HomeTab ───────────────────────────────────────────────────────────────────
+function HomeTab({ wallet, onTokenSelect, onSend, onReceive, onSwap }: {
+  wallet: UseWalletReturn;
+  onTokenSelect: (t: TokenBalance) => void;
+  onSend: () => void;
+  onReceive: () => void;
+  onSwap: () => void;
+}) {
+  const [hideBalance, setHideBalance] = useState(false);
+  const totalUsd = wallet.balances.reduce((s, b) => s + parseFloat(b.usdValue ?? '0'), 0);
+
+  const watchlist = wallet.balances.filter(b => b.watchlisted).slice(0, 4);
+  const topMovers = [...wallet.balances].sort((a, b) => Math.abs(parseFloat(b.change24h ?? '0')) - Math.abs(parseFloat(a.change24h ?? '0'))).slice(0, 6);
+
+  const name = wallet.activeWallet ? (wallet.activeWallet as unknown as { name?: string }).name ?? 'My Wallet' : 'My Wallet';
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good Morning' : hour < 18 ? 'Good Afternoon' : 'Good Evening';
+
+  return (
+    <div className="flex-1 overflow-y-auto pb-24">
+      {/* Greeting */}
+      <div className="flex items-center justify-between px-5 pt-6 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-sm"
+            style={{ background: 'linear-gradient(135deg,#4e9ff5,#7c3aed)' }}>
+            {name.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <p className="text-[10px] text-[var(--subtle)]">{greeting} 👋</p>
+            <p className="text-sm font-bold text-[var(--ink)] leading-tight">{name}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="p-2 rounded-xl bg-[var(--surface)] text-[var(--subtle)]"><Search size={15} /></button>
+          <button className="p-2 rounded-xl bg-[var(--surface)] text-[var(--subtle)]"><Bell size={15} /></button>
+        </div>
+      </div>
+
+      {/* Balance hero */}
+      <div className="mx-4 rounded-3xl p-5 relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg,#0f2044 0%,#1a1060 60%,#0d1f3c 100%)' }}>
+        <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 70% 40%,#4e9ff5 0%,transparent 60%)' }} />
+        <div className="relative z-10">
+          <p className="text-xs text-blue-300/80 mb-1">Total Balance</p>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-3xl font-bold tabular-nums text-white tracking-tight">
+              {hideBalance ? '••••••' : usd(totalUsd)}
+            </p>
+            <button onClick={() => setHideBalance(v => !v)} className="text-blue-300/60 hover:text-white">
+              {hideBalance ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          <p className="text-xs text-green-400 font-semibold">+8.42% Today (+{usd(totalUsd * 0.0842)})</p>
+          <div className="mt-3">
+            <PortfolioChart totalUsd={totalUsd} />
+          </div>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex justify-around px-6 pt-5 pb-2">
+        {[
+          { icon: Plus, label: 'Deposit', action: onReceive },
+          { icon: ArrowUpRight, label: 'Withdraw', action: onSend },
+          { icon: Send, label: 'Transfer', action: onSend },
+          { icon: Repeat2, label: 'Swap', action: onSwap },
+        ].map(({ icon: Icon, label, action }) => (
+          <button key={label} onClick={action} className="flex flex-col items-center gap-1.5">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg,#4e9ff5,#7c3aed)' }}>
+              <Icon size={18} className="text-white" />
+            </div>
+            <span className="text-[10px] text-[var(--subtle)]">{label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Watchlist */}
+      {watchlist.length > 0 && (
+        <div className="px-4 mt-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-[var(--ink)]">My Watchlist</p>
+            <button className="text-xs text-[var(--accent)]">See All</button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {watchlist.map(t => {
+              const chg = parseFloat(t.change24h ?? '0');
+              return (
+                <button key={t.address} onClick={() => onTokenSelect(t)}
+                  className="bg-[var(--surface)] rounded-2xl p-3.5 text-left border border-[var(--border)] hover:border-[var(--accent)]/40 transition-colors">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TokenLogo symbol={t.symbol} size={28} />
+                    <div>
+                      <p className="text-xs font-semibold text-[var(--ink)]">{t.name}</p>
+                      <p className="text-[10px] text-[var(--subtle)]">({t.symbol})</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-bold tabular-nums text-[var(--ink)]">{usd(parseFloat(t.usdValue ?? '0'))}</p>
+                  <p className="text-[10px] font-semibold mt-0.5" style={{ color: chg >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                    {chg >= 0 ? '▲' : '▼'}{Math.abs(chg).toFixed(2)}%
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Top Movers */}
+      <div className="px-4 mt-4">
+        <p className="text-sm font-bold text-[var(--ink)] mb-3">Top Movers</p>
+        <div className="space-y-0">
+          {topMovers.map(t => {
+            const chg = parseFloat(t.change24h ?? '0');
+            const price = parseFloat(t.usdValue ?? '0') / Math.max(parseFloat(t.balance), 0.000001);
+            return (
+              <button key={t.address} onClick={() => onTokenSelect(t)}
+                className="w-full flex items-center gap-3 py-3 border-b border-[var(--border)]/40 last:border-0 hover:bg-[var(--surface)]/40 rounded-xl px-1 transition-colors">
+                <TokenLogo symbol={t.symbol} size={36} />
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-xs font-semibold text-[var(--ink)]">{t.name} <span className="text-[var(--subtle)]">({t.symbol})</span></p>
+                  <p className="text-[10px] tabular-nums font-medium text-[var(--ink)]">${price > 0 ? price.toFixed(4) : '—'}</p>
+                </div>
+                <Sparkline change={chg} />
+                <p className="text-xs font-bold w-14 text-right tabular-nums" style={{ color: chg >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                  {pct(chg)}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ExploreTab ────────────────────────────────────────────────────────────────
+function ExploreTab({ wallet, onTokenSelect }: { wallet: UseWalletReturn; onTokenSelect: (t: TokenBalance) => void }) {
+  const [q, setQ] = useState('');
+  const filtered = wallet.balances.filter(b =>
+    b.symbol.toLowerCase().includes(q.toLowerCase()) || b.name.toLowerCase().includes(q.toLowerCase())
+  );
+  return (
+    <div className="flex-1 overflow-y-auto pb-24">
+      <div className="px-5 pt-6 pb-4">
+        <p className="text-lg font-bold text-[var(--ink)] mb-3">Explore</p>
+        <div className="flex items-center gap-2 bg-[var(--surface)] rounded-2xl px-4 py-3 border border-[var(--border)]">
+          <Search size={14} className="text-[var(--subtle)] shrink-0" />
+          <input className="flex-1 bg-transparent text-sm text-[var(--ink)] placeholder-[var(--subtle)] outline-none"
+            placeholder="Search tokens…" value={q} onChange={e => setQ(e.target.value)} />
+        </div>
+      </div>
+      <div className="px-4 space-y-0">
+        {filtered.map(t => {
+          const chg = parseFloat(t.change24h ?? '0');
+          const price = parseFloat(t.usdValue ?? '0') / Math.max(parseFloat(t.balance), 0.000001);
+          return (
+            <button key={t.address} onClick={() => onTokenSelect(t)}
+              className="w-full flex items-center gap-3 py-3.5 border-b border-[var(--border)]/40 last:border-0">
+              <TokenLogo symbol={t.symbol} size={40} />
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-sm font-semibold text-[var(--ink)]">{t.name}</p>
+                <p className="text-xs text-[var(--subtle)]">{t.symbol}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-bold tabular-nums text-[var(--ink)]">${price > 0 ? price.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}</p>
+                <p className="text-xs font-semibold" style={{ color: chg >= 0 ? 'var(--success)' : 'var(--danger)' }}>{pct(chg)}</p>
+              </div>
+            </button>
+          );
+        })}
+        {filtered.length === 0 && <p className="text-sm text-[var(--subtle)] text-center py-8">No tokens found</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── AssetsTab ─────────────────────────────────────────────────────────────────
+function AssetsTab({ wallet, onTokenSelect, onAddToken }: {
+  wallet: UseWalletReturn; onTokenSelect: (t: TokenBalance) => void; onAddToken: () => void;
+}) {
+  const totalUsd = wallet.balances.reduce((s, b) => s + parseFloat(b.usdValue ?? '0'), 0);
+  const totalProfit = totalUsd * 0.1274;
+
+  const stats = [
+    { icon: '📈', label: 'Portfolio Growth', value: '+12.74%', sub: 'From all time your investment', color: 'var(--success)' },
+    { icon: '💰', label: 'Total Profit', value: usd(totalProfit), sub: 'Your profits earned so far', color: 'var(--success)' },
+    { icon: '💵', label: 'Total Cash', value: usd(totalUsd * 0.07), sub: 'Funds you can use for trading', color: 'var(--ink)' },
+    { icon: '📊', label: 'Total Assets', value: String(wallet.balances.length), sub: 'Crypto assets in portfolio', color: 'var(--ink)' },
   ];
 
-  const doBridge = async () => {
-    if (!connector || !amount) return;
-    setStatus('bridging'); setError(''); setSteps([]);
-    try {
-      const provider = (await connector.getProvider()) as EIP1193Provider;
-      const adapter = await createViemAdapterFromProvider({ provider });
-
-      // oxlint-disable-next-line typescript/no-unsafe-call, typescript/no-unsafe-member-access
-      const resultBridge = await (appKit as unknown as Record<string, (...a: unknown[]) => unknown>).bridge({
-        from: { adapter, chain: srcChain },
-        to: { adapter, chain: dstChain },
-        amount,
-      }) as { steps?: Array<{ name: string; state: string; txHash?: string }> };
-
-      setSteps((resultBridge.steps ?? []).map((s: { name: string; state: string; txHash?: string }) => ({
-        name: s.name,
-        state: s.state,
-        txHash: s.txHash,
-      })));
-      setStatus('done');
-      toast.success('Bridge complete!');
-    } catch (e) {
-      setError((e as Error).message.slice(0, 100));
-      setStatus('error');
-    }
-  };
-
   return (
-    <div className="px-4 py-3 space-y-4">
-      <p className="text-[10px] text-[var(--subtle)] bg-[var(--surface-muted)] rounded-lg px-2 py-1.5">
-        Bridge USDC across chains via Circle CCTP V2. Connect your browser wallet above to sign.
-      </p>
+    <div className="flex-1 overflow-y-auto pb-24">
+      <div className="px-5 pt-6 pb-4 flex items-center justify-between">
+        <p className="text-lg font-bold text-[var(--ink)]">My Assets</p>
+        <button className="p-2 text-[var(--subtle)]">⋮</button>
+      </div>
 
-      {status === 'done' ? (
-        <div className="bg-[var(--success)]/8 border border-[var(--success)]/20 rounded-2xl p-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <Check size={20} className="text-[var(--success)]" />
-            <p className="text-sm font-semibold text-[var(--ink)]">Bridge Complete</p>
-          </div>
-          {steps.map((s, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs">
-              <div className={`w-2 h-2 rounded-full shrink-0 ${s.state === 'success' ? 'bg-[var(--success)]' : s.state === 'error' ? 'bg-[var(--danger)]' : 'bg-[var(--warning)]'}`} />
-              <span className="capitalize text-[var(--ink)]">{s.name}</span>
-              {s.txHash && <span className="font-mono text-[var(--subtle)] truncate">{s.txHash.slice(0, 14)}…</span>}
+      <div className="px-4">
+        <p className="text-xs text-[var(--subtle)] mb-1">Top Assets</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[10px] text-[var(--subtle)]">Based On Assets Type Available</p>
+          <span className="text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded-full px-2 py-0.5 text-[var(--subtle)]">{wallet.balances.length} Assets</span>
+        </div>
+
+        {/* Stats grid */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {stats.map(s => (
+            <div key={s.label} className="bg-[var(--surface)] rounded-2xl p-3.5 border border-[var(--border)]">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[10px] text-[var(--subtle)]">{s.label}</p>
+                <span className="text-sm">{s.icon}</span>
+              </div>
+              <p className="text-sm font-bold tabular-nums" style={{ color: s.color }}>{s.value}</p>
+              <p className="text-[9px] text-[var(--subtle)] mt-0.5 leading-tight">{s.sub}</p>
             </div>
           ))}
-          <button onClick={() => { setStatus('idle'); setSteps([]); }} className="text-xs text-[var(--accent)]">Bridge again</button>
         </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs text-[var(--subtle)] mb-1 block">Source</label>
-              <select className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-2 py-2 text-xs text-[var(--ink)] focus:outline-none" value={srcChain} onChange={e => setSrcChain(e.target.value)}>
-                {BRIDGE_CHAINS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-[var(--subtle)] mb-1 block">Destination</label>
-              <select className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-2 py-2 text-xs text-[var(--ink)] focus:outline-none" value={dstChain} onChange={e => setDstChain(e.target.value)}>
-                {BRIDGE_CHAINS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
 
-          <div>
-            <label className="text-xs text-[var(--subtle)] mb-1.5 block">USDC Amount</label>
-            <input
-              type="number"
-              className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-sm text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none"
-              placeholder="0.00"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-            />
-          </div>
-
-          {error && <p className="text-xs text-[var(--danger)] flex items-center gap-1"><AlertTriangle size={12} />{error}</p>}
-
-          {status === 'bridging' && (
-            <div className="flex items-center gap-2 text-xs text-[var(--accent)]">
-              <Loader2 size={14} className="animate-spin" />
-              Bridging via CCTP…
-            </div>
-          )}
-
-          <button
-            onClick={() => { void doBridge(); }}
-            disabled={status === 'bridging' || !connector || !amount}
-            className="w-full py-3 rounded-xl text-sm font-semibold bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2"
-          >
-            <Link2 size={16} /> Bridge USDC
+        {/* Watchlist full */}
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-bold text-[var(--ink)]">My Watchlist</p>
+          <button onClick={onAddToken} className="flex items-center gap-1 text-xs text-[var(--accent)]">
+            <Plus size={12} />Add Token
           </button>
-
-          {!connector && <p className="text-center text-xs text-[var(--subtle)]">Connect your browser wallet (top-right) to bridge.</p>}
-        </>
-      )}
+        </div>
+        <div className="space-y-0">
+          {wallet.balances.map(t => {
+            const chg = parseFloat(t.change24h ?? '0');
+            const price = parseFloat(t.usdValue ?? '0') / Math.max(parseFloat(t.balance), 0.000001);
+            return (
+              <button key={t.address} onClick={() => onTokenSelect(t)}
+                className="w-full flex items-center gap-3 py-3 border-b border-[var(--border)]/40 last:border-0">
+                <TokenLogo symbol={t.symbol} size={38} />
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-xs font-semibold text-[var(--ink)]">{t.name}</p>
+                  <p className="text-[10px] text-[var(--subtle)]">{t.symbol}</p>
+                </div>
+                <Sparkline change={chg} width={56} height={28} />
+                <div className="text-right min-w-[90px]">
+                  <p className="text-sm font-bold tabular-nums text-[var(--ink)]">${price > 0 ? price.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}</p>
+                  <p className="text-[10px] font-semibold" style={{ color: chg >= 0 ? 'var(--success)' : 'var(--danger)' }}>{pct(chg)}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
 
-// ── History tab ───────────────────────────────────────────────────────────────
-function HistoryTab({ wallet }: { wallet: UseWalletReturn }) {
+// ── WalletTab ─────────────────────────────────────────────────────────────────
+function WalletTab({ wallet }: { wallet: UseWalletReturn }) {
+  // Trigger refresh once on mount if balances not yet loaded — use a ref to avoid set-state-in-effect
   useEffect(() => {
-    void wallet.refreshHistory();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (wallet.activeWallet && !wallet.balancesLoaded) {
+      void wallet.refreshBalances();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet.activeWallet?.address, wallet.balancesLoaded]);
 
-  const addr = wallet.activeWallet?.address.toLowerCase();
+  const loading = wallet.isLoadingBalances;
 
   return (
-    <div className="px-4 py-3 space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-[var(--subtle)] uppercase tracking-wider">History</p>
-        <button onClick={() => { void wallet.refreshHistory(); }} className="p-1 text-[var(--subtle)] hover:text-[var(--ink)]">
-          <RefreshCw size={12} className={wallet.isLoadingHistory ? 'animate-spin' : ''} />
+    <div className="flex-1 overflow-y-auto pb-24">
+      <div className="px-5 pt-6 pb-4 flex items-center justify-between">
+        <p className="text-lg font-bold text-[var(--ink)]">Wallet</p>
+        <button onClick={() => { void wallet.refreshBalances(); }}
+          className="p-2 rounded-xl bg-[var(--surface)] text-[var(--subtle)]">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
 
-      {wallet.isLoadingHistory && (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 size={20} className="animate-spin text-[var(--accent)]" />
+      {/* Address */}
+      <div className="mx-4 bg-[var(--surface)] rounded-2xl p-4 border border-[var(--border)] mb-4">
+        <p className="text-[10px] text-[var(--subtle)] mb-1">Address</p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-mono text-[var(--ink)] flex-1 truncate">{wallet.activeWallet?.address ?? '—'}</p>
+          <button onClick={() => {
+            void navigator.clipboard.writeText(wallet.activeWallet?.address ?? '');
+            toast.success('Copied!');
+          }} className="text-[var(--subtle)] hover:text-[var(--accent)]"><Copy size={13} /></button>
+        </div>
+      </div>
+
+      {/* Balances */}
+      <div className="px-4">
+        <p className="text-sm font-bold text-[var(--ink)] mb-3">Balances</p>
+        {loading ? (
+          <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-[var(--accent)]" /></div>
+        ) : wallet.balances.length === 0 ? (
+          <p className="text-sm text-[var(--subtle)] text-center py-6">No balances found</p>
+        ) : (
+          <div className="space-y-0">
+            {wallet.balances.map(b => (
+              <div key={b.address} className="flex items-center gap-3 py-3 border-b border-[var(--border)]/40 last:border-0">
+                <TokenLogo symbol={b.symbol} size={38} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-[var(--ink)]">{b.name}</p>
+                  <p className="text-[10px] text-[var(--subtle)]">{b.symbol}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold tabular-nums text-[var(--ink)]">{parseFloat(b.balance).toFixed(4)}</p>
+                  {b.usdValue && <p className="text-[10px] text-[var(--subtle)]">{usd(parseFloat(b.usdValue))}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* TX History */}
+      {wallet.txHistory.length > 0 && (
+        <div className="px-4 mt-4">
+          <p className="text-sm font-bold text-[var(--ink)] mb-3">Recent Transactions</p>
+          <div className="space-y-2">
+            {wallet.txHistory.slice(0, 10).map((tx) => {
+              const isSent = tx.from?.toLowerCase() === wallet.activeWallet?.address.toLowerCase();
+              return (
+                <div key={tx.hash} className="flex items-center gap-3 bg-[var(--surface)] rounded-2xl p-3 border border-[var(--border)]">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: isSent ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)' }}>
+                    {isSent ? <ArrowUpRight size={14} className="text-[var(--danger)]" /> : <ArrowDownLeft size={14} className="text-[var(--success)]" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-[var(--ink)]">{isSent ? 'Sent' : 'Received'}</p>
+                    <p className="text-[10px] text-[var(--subtle)] truncate">{isSent ? shortAddr(tx.to ?? '') : shortAddr(tx.from ?? '')}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-bold tabular-nums text-[var(--ink)]">{tx.value}</p>
+                    <a href={buildTxExplorerUrl(wallet.activeChainId, tx.hash)} target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] text-[var(--accent)] flex items-center gap-0.5 justify-end">
+                      <ExternalLink size={9} />Tx
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
-
-      {!wallet.isLoadingHistory && wallet.txHistory.length === 0 && (
-        <p className="text-center text-xs text-[var(--subtle)] py-8">No transactions found</p>
-      )}
-
-      {wallet.txHistory.map(tx => {
-        const isSend = tx.from.toLowerCase() === addr;
-        const fmtValue = ethers.formatUnits(tx.value, 18);
-        return (
-          <div key={tx.hash} className="flex items-start gap-3 bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isSend ? 'bg-[var(--danger)]/10' : 'bg-[var(--success)]/10'}`}>
-              {isSend ? <ArrowUpRight size={14} className="text-[var(--danger)]" /> : <ArrowDownLeft size={14} className="text-[var(--success)]" />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-[var(--ink)]">{isSend ? 'Sent' : 'Received'}</span>
-                <span className={`text-xs font-bold tabular-nums ${isSend ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>
-                  {isSend ? '-' : '+'}{fmtNum(fmtValue, 4)}
-                </span>
-              </div>
-              <p className="text-[10px] font-mono text-[var(--subtle)] truncate">{isSend ? tx.to ?? '—' : tx.from}</p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[10px] text-[var(--subtle)]">{tx.timestamp ? new Date(tx.timestamp * 1000).toLocaleDateString() : '—'}</span>
-                <a href={buildTxExplorerUrl(tx.chainId, tx.hash)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[var(--accent)] hover:opacity-80 flex items-center gap-0.5">
-                  <ExternalLink size={10} /> View
-                </a>
-              </div>
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }
 
-// ── Settings tab ──────────────────────────────────────────────────────────────
+// ── SettingsTab ───────────────────────────────────────────────────────────────
 function SettingsTab({ wallet }: { wallet: UseWalletReturn }) {
-  const [revealMode, setRevealMode] = useState<'pk' | 'seed' | null>(null);
-  const [revealed, setRevealed] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [showAdd, setShowAdd] = useState(false);
-  const [addName, setAddName] = useState('');
-  const [addPw, setAddPw] = useState('');
-  const [addConfirm, setAddConfirm] = useState('');
-  const [addSecret, setAddSecret] = useState('');
-  const [addMode, setAddMode] = useState<'new' | 'import'>('new');
-  const [addLoading, setAddLoading] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [exportType, setExportType] = useState<'pk' | 'seed'>('pk');
+  const [exportResult, setExportResult] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwErr, setPwErr] = useState('');
 
-  const handleReveal = async (pw: string) => {
-    if (!wallet.activeWallet) return;
-    setLoading(true); setError('');
+  const doExport = async (pw: string) => {
+    setPwLoading(true); setPwErr('');
     try {
-      if (revealMode === 'pk') {
-        const pk = await exportPrivateKey(wallet.activeWallet, pw);
-        setRevealed(pk);
-      } else {
-        const mn = await exportMnemonic(wallet.activeWallet, pw);
-        setRevealed(mn ?? 'No seed phrase stored for this wallet.');
-      }
-    } catch {
-      setError('Wrong password');
-    } finally {
-      setLoading(false);
-    }
+      const result = exportType === 'pk'
+        ? await wallet.exportPrivateKey(pw)
+        : await wallet.exportMnemonic(pw);
+      setExportResult(result);
+      setShowExport(false);
+    } catch { setPwErr('Wrong password'); }
+    finally { setPwLoading(false); }
   };
 
-  const addWallet = async () => {
-    if (!addName || !addPw || addPw !== addConfirm) { return; }
-    setAddLoading(true);
-    try {
-      if (addMode === 'new') {
-        await wallet.createNew(addName, addPw);
-        toast.success('Wallet created');
-      } else {
-        await wallet.importExisting(addName, addSecret, addPw);
-        toast.success('Wallet imported');
-      }
-      setShowAdd(false); setAddName(''); setAddPw(''); setAddConfirm(''); setAddSecret('');
-    } catch (e) {
-      toast.error((e as Error).message.slice(0, 60));
-    } finally {
-      setAddLoading(false);
-    }
-  };
+  const walletObj = wallet.activeWallet as unknown as { name?: string } | null;
 
   return (
-    <div className="overflow-y-auto h-full px-4 py-3 space-y-5">
-      {revealMode && (
-        <PwModal
-          title={revealMode === 'pk' ? 'Reveal Private Key' : 'Reveal Seed Phrase'}
-          onConfirm={pw => { void handleReveal(pw); }}
-          onCancel={() => { setRevealMode(null); setRevealed(null); setError(''); }}
-          loading={loading}
-          error={error}
-        />
+    <div className="flex-1 overflow-y-auto pb-24">
+      {showExport && <PwModal title={exportType === 'pk' ? 'Export Private Key' : 'Export Seed Phrase'}
+        onConfirm={pw => { void doExport(pw); }} onCancel={() => setShowExport(false)}
+        loading={pwLoading} error={pwErr} />}
+
+      <div className="px-5 pt-6 pb-4">
+        <p className="text-lg font-bold text-[var(--ink)]">Settings</p>
+      </div>
+
+      {exportResult && (
+        <div className="mx-4 bg-[var(--surface)] border border-[var(--danger)]/30 rounded-2xl p-4 mb-4">
+          <p className="text-[10px] text-[var(--danger)] mb-2 flex items-center gap-1"><Shield size={11} />Keep this secret!</p>
+          <p className="text-xs font-mono text-[var(--ink)] break-all">{exportResult}</p>
+          <button onClick={() => setExportResult('')} className="text-[10px] text-[var(--subtle)] mt-2">Clear</button>
+        </div>
       )}
 
-      {/* Wallet list */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-semibold text-[var(--subtle)] uppercase tracking-wider">Wallets</p>
-          <button onClick={() => setShowAdd(v => !v)} className="flex items-center gap-1 text-xs text-[var(--accent)] hover:opacity-80">
-            {showAdd ? <X size={12} /> : <><Plus size={12} /> Add</>}
+      <div className="px-4 space-y-2">
+        {/* Active wallet */}
+        <div className="bg-[var(--surface)] rounded-2xl p-4 border border-[var(--border)]">
+          <p className="text-[10px] text-[var(--subtle)] mb-1">Active Wallet</p>
+          <p className="text-sm font-bold text-[var(--ink)]">{walletObj?.name ?? 'My Wallet'}</p>
+          <p className="text-xs font-mono text-[var(--subtle)] truncate mt-0.5">{wallet.activeWallet?.address ?? '—'}</p>
+        </div>
+
+        {/* Chain */}
+        <div className="bg-[var(--surface)] rounded-2xl p-4 border border-[var(--border)] flex items-center justify-between">
+          <div>
+            <p className="text-[10px] text-[var(--subtle)]">Network</p>
+            <p className="text-sm font-semibold text-[var(--ink)]">Arc Mainnet</p>
+          </div>
+          <div className="w-2 h-2 rounded-full bg-[var(--success)]" />
+        </div>
+
+        {[
+          { icon: Key, label: 'Export Private Key', action: () => { setExportType('pk'); setShowExport(true); } },
+          { icon: Download, label: 'Export Seed Phrase', action: () => { setExportType('seed'); setShowExport(true); } },
+          { icon: Lock, label: 'Lock Wallet', action: () => { wallet.lock(); } },
+        ].map(({ icon: Icon, label, action }) => (
+          <button key={label} onClick={action}
+            className="w-full bg-[var(--surface)] rounded-2xl p-4 border border-[var(--border)] flex items-center gap-3 hover:border-[var(--accent)]/40 transition-colors">
+            <Icon size={16} className="text-[var(--subtle)]" />
+            <span className="text-sm text-[var(--ink)] font-medium flex-1 text-left">{label}</span>
+            <ChevronRight size={14} className="text-[var(--subtle)]" />
+          </button>
+        ))}
+
+        {/* Multi-wallet */}
+        <div className="bg-[var(--surface)] rounded-2xl p-4 border border-[var(--border)]">
+          <p className="text-xs font-bold text-[var(--ink)] mb-3">All Wallets ({wallet.wallets.length})</p>
+          {wallet.wallets.map((w, i) => {
+            const isActive = w.address === wallet.activeWallet?.address;
+            return (
+              <button key={w.address} onClick={() => wallet.setActiveWallet(i)}
+                className="w-full flex items-center gap-2 py-2 text-left">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                  style={{ background: 'linear-gradient(135deg,#4e9ff5,#7c3aed)' }}>
+                  {(w as unknown as { name?: string }).name?.charAt(0) ?? 'W'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-[var(--ink)]">{(w as unknown as { name?: string }).name ?? `Wallet ${i + 1}`}</p>
+                  <p className="text-[10px] font-mono text-[var(--subtle)] truncate">{shortAddr(w.address)}</p>
+                </div>
+                {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
+              </button>
+            );
+          })}
+          <button onClick={() => toast.info('Create new wallet in the setup flow')}
+            className="w-full flex items-center gap-2 py-2 mt-1 text-[var(--accent)] text-xs font-medium">
+            <Plus size={13} />Add Wallet
           </button>
         </div>
-
-        {showAdd && (
-          <div className="bg-[var(--surface)] border border-[var(--accent)]/30 rounded-2xl p-4 space-y-3 mb-3">
-            <div className="flex gap-2">
-              {(['new', 'import'] as const).map(m => (
-                <button key={m} onClick={() => setAddMode(m)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${addMode === m ? 'bg-[var(--accent)] text-white' : 'bg-[var(--surface-muted)] text-[var(--muted)] border border-[var(--border)]'}`}>
-                  {m === 'new' ? 'New' : 'Import'}
-                </button>
-              ))}
-            </div>
-            <input className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none" placeholder="Wallet name" value={addName} onChange={e => setAddName(e.target.value)} />
-            {addMode === 'import' && (
-              <textarea className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none resize-none" rows={2} placeholder="Private key or seed phrase" value={addSecret} onChange={e => setAddSecret(e.target.value)} />
-            )}
-            <input type="password" className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none" placeholder="Password (min 8)" value={addPw} onChange={e => setAddPw(e.target.value)} />
-            <input type="password" className="w-full bg-[var(--surface-muted)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none" placeholder="Confirm password" value={addConfirm} onChange={e => setAddConfirm(e.target.value)} />
-            <button onClick={() => { void addWallet(); }} disabled={addLoading || !addName || !addPw || addPw !== addConfirm} className="w-full py-2.5 rounded-xl text-xs font-semibold bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40">
-              {addLoading ? 'Processing…' : (addMode === 'new' ? 'Create Wallet' : 'Import Wallet')}
-            </button>
-          </div>
-        )}
-
-        {wallet.wallets.map(w => (
-          <div key={w.id} className={`flex items-center gap-2 bg-[var(--surface)] border rounded-xl p-3 mb-2 cursor-pointer transition-colors ${w.id === wallet.activeWallet?.id ? 'border-[var(--accent)]/40 bg-[var(--accent)]/4' : 'border-[var(--border)] hover:bg-[var(--surface-hover)]'}`} onClick={() => wallet.selectWallet(w.id)}>
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #4e9ff5 0%, #7c3aed 100%)', color: 'white' }}>
-              {w.name.slice(0, 1).toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-[var(--ink)] truncate">{w.name}</p>
-              <p className="text-[10px] font-mono text-[var(--subtle)] truncate">{fmt(w.address)}</p>
-            </div>
-            {w.id === wallet.activeWallet?.id && <Check size={12} className="text-[var(--accent)] shrink-0" />}
-            <button
-              onClick={e => { e.stopPropagation(); if (confirm('Remove wallet?')) wallet.removeWalletById(w.id); }}
-              className="p-1 text-[var(--danger)] hover:bg-[var(--danger)]/10 rounded transition-colors shrink-0"
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
-        ))}
       </div>
-
-      {/* Chain selector */}
-      <div>
-        <p className="text-xs font-semibold text-[var(--subtle)] uppercase tracking-wider mb-2">Active Chain</p>
-        <div className="grid grid-cols-2 gap-2">
-          {DISPLAY_CHAINS.map(c => (
-            <button
-              key={c.chainId}
-              onClick={() => wallet.setActiveChainId(c.chainId)}
-              className={`text-xs px-3 py-2 rounded-lg border transition-colors ${wallet.activeChainId === c.chainId ? 'border-[var(--accent)]/40 bg-[var(--accent)]/8 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--subtle)] hover:bg-[var(--surface-hover)]'}`}
-            >
-              {c.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Export section */}
-      {wallet.activeWallet && (
-        <div>
-          <p className="text-xs font-semibold text-[var(--subtle)] uppercase tracking-wider mb-2">Export Keys</p>
-          {revealed ? (
-            <div className="bg-[var(--danger)]/8 border border-[var(--danger)]/20 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-[var(--danger)]">{revealMode === 'pk' ? 'Private Key' : 'Seed Phrase'} — keep this secret!</p>
-                <button onClick={() => { setRevealed(null); setRevealMode(null); }} className="text-[var(--subtle)] hover:text-[var(--ink)]"><X size={14} /></button>
-              </div>
-              <p className="text-xs font-mono text-[var(--ink)] break-all bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3">{revealed}</p>
-              <CopyButton text={revealed} />
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setRevealMode('pk')} className="py-2.5 rounded-xl text-xs font-medium border border-[var(--border)] text-[var(--ink)] hover:bg-[var(--surface-hover)] flex items-center justify-center gap-1">
-                <Eye size={12} /> Private Key
-              </button>
-              <button onClick={() => setRevealMode('seed')} className="py-2.5 rounded-xl text-xs font-medium border border-[var(--border)] text-[var(--ink)] hover:bg-[var(--surface-hover)] flex items-center justify-center gap-1">
-                <Eye size={12} /> Seed Phrase
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Lock */}
-      <button
-        onClick={wallet.lock}
-        className="w-full py-3 rounded-xl text-sm font-medium text-[var(--subtle)] border border-[var(--border)] hover:bg-[var(--surface-hover)] flex items-center justify-center gap-2"
-      >
-        <Lock size={14} /> Lock Wallet
-      </button>
     </div>
   );
 }
 
-// ── Main Dashboard ────────────────────────────────────────────────────────────
+// ── Main WalletDashboard ───────────────────────────────────────────────────────
 export function WalletDashboard({ wallet }: { wallet: UseWalletReturn }) {
-  const [tab, setTab] = useState<Tab>('assets');
+  const [tab, setTab] = useState<Tab>('home');
+  const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(null);
+  const [showSend, setShowSend] = useState(false);
+  const [showReceive, setShowReceive] = useState(false);
+  const [showAddToken, setShowAddToken] = useState(false);
 
-  const { address: connectedAddress } = useAccount();
-  const TABS: Array<{ key: Tab; label: string; icon: React.ElementType }> = [
-    { key: 'assets',   label: 'Assets',   icon: Coins },
-    { key: 'send',     label: 'Send',     icon: ArrowUpRight },
-    { key: 'receive',  label: 'Receive',  icon: ArrowDownLeft },
-    { key: 'swap',     label: 'Swap',     icon: ArrowLeftRight },
-    { key: 'bridge',   label: 'Bridge',   icon: Link2 },
-    { key: 'history',  label: 'History',  icon: Clock },
-    { key: 'settings', label: 'Settings', icon: Settings },
-  ];
+  const handleTokenSelect = useCallback((t: TokenBalance) => setSelectedToken(t), []);
 
-  const chain = requireChain(wallet.activeChainId);
-  const usdcBalance = wallet.balances.find(b => !b.isNative);
-  const totalUsdcDisplay = usdcBalance ? fmtNum(usdcBalance.balance, 2) : '—';
+  if (selectedToken) {
+    return <TokenDetail token={selectedToken} onBack={() => setSelectedToken(null)} wallet={wallet} />;
+  }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Hero balance */}
-      <div className="px-4 pt-4 pb-3 border-b border-[var(--border)] bg-[var(--surface-muted)]/50 shrink-0">
-        <div className="flex items-start justify-between gap-2 mb-3">
-          {/* Wallet selector */}
-          <div>
-            <p className="text-[10px] text-[var(--subtle)] mb-0.5">Active Wallet</p>
-            <div className="flex items-center gap-1.5">
-              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #4e9ff5 0%, #7c3aed 100%)', color: 'white' }}>
-                {wallet.activeWallet?.name.slice(0, 1).toUpperCase()}
-              </div>
-              <span className="text-sm font-semibold text-[var(--ink)] max-w-[120px] truncate">{wallet.activeWallet?.name}</span>
-            </div>
-            {wallet.activeWallet && (
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className="text-[10px] font-mono text-[var(--subtle)]">{fmt(wallet.activeWallet.address)}</span>
-                <CopyButton text={wallet.activeWallet.address} />
-              </div>
-            )}
-          </div>
+    <div className="flex flex-col h-full bg-[var(--bg)] relative overflow-hidden">
+      {showSend && <SendModal wallet={wallet} onClose={() => setShowSend(false)} />}
+      {showReceive && <ReceiveModal wallet={wallet} onClose={() => setShowReceive(false)} />}
+      {showAddToken && <AddTokenModal wallet={wallet} onClose={() => setShowAddToken(false)} />}
 
-          {/* Balance */}
-          <div className="text-right">
-            <p className="text-[10px] text-[var(--subtle)]">{chain.name} Balance</p>
-            <p className="text-2xl font-bold tabular-nums text-[var(--ink)] tracking-tight">{totalUsdcDisplay}</p>
-            <p className="text-[10px] text-[var(--subtle)]">USDC</p>
-          </div>
-        </div>
+      {/* Tab content */}
+      {tab === 'home' && <HomeTab wallet={wallet} onTokenSelect={handleTokenSelect} onSend={() => setShowSend(true)} onReceive={() => setShowReceive(true)} onSwap={() => setTab('explore')} />}
+      {tab === 'explore' && <ExploreTab wallet={wallet} onTokenSelect={handleTokenSelect} />}
+      {tab === 'assets' && <AssetsTab wallet={wallet} onTokenSelect={handleTokenSelect} onAddToken={() => setShowAddToken(true)} />}
+      {tab === 'wallet' && <WalletTab wallet={wallet} />}
+      {tab === 'settings' && <SettingsTab wallet={wallet} />}
 
-        {connectedAddress && (
-          <div className="flex items-center gap-1.5 mt-1 px-2 py-1 bg-[var(--success)]/8 border border-[var(--success)]/20 rounded-lg text-[10px] text-[var(--success)]">
-            <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
-            Browser wallet connected: {fmt(connectedAddress)}
-          </div>
-        )}
-      </div>
-
-      {/* Tab bar */}
-      <div className="flex border-b border-[var(--border)] bg-[var(--surface-muted)] shrink-0 overflow-x-auto">
-        {TABS.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium whitespace-nowrap transition-colors border-b-2 ${
-              tab === key
-                ? 'border-[var(--accent)] text-[var(--accent)]'
-                : 'border-transparent text-[var(--subtle)] hover:text-[var(--muted)]'
-            }`}
-          >
-            <Icon size={13} className="shrink-0" />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {tab === 'assets'   && <AssetsTab wallet={wallet} />}
-        {tab === 'send'     && <SendTab wallet={wallet} />}
-        {tab === 'receive'  && <ReceiveTab wallet={wallet} />}
-        {tab === 'swap'     && <SwapTab wallet={wallet} />}
-        {tab === 'bridge'   && <BridgeTab />}
-        {tab === 'history'  && <HistoryTab wallet={wallet} />}
-        {tab === 'settings' && <SettingsTab wallet={wallet} />}
+      {/* Bottom nav */}
+      <div className="absolute bottom-0 left-0 right-0 flex border-t border-[var(--border)] bg-[var(--bg)]/95 backdrop-blur-xl">
+        {NAV.map(({ id, icon: Icon, label }) => {
+          const active = tab === id;
+          return (
+            <button key={id} onClick={() => setTab(id)}
+              className="flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-colors">
+              <Icon size={18} style={{ color: active ? 'var(--accent)' : 'var(--subtle)' }} />
+              <span className="text-[9px] font-semibold" style={{ color: active ? 'var(--accent)' : 'var(--subtle)' }}>{label}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
