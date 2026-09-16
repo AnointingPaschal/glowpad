@@ -1,9 +1,58 @@
-import artifact from '../contracts/out/ArcLaunchpad.sol/ArcLaunchpad.json';
-
 // IMPORTANT: Replace this with the ArcLaunchpad address you deploy to Arc Mainnet.
 // The testnet contract at 0x1669b59175941b07072b2984ec98889068085249 is NOT valid on mainnet.
 export const LAUNCHPAD_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
-export const LAUNCHPAD_ABI = artifact.abi;
+
+export const LAUNCHPAD_ABI = [
+  {"type":"constructor","inputs":[{"name":"usdcToken","type":"address","internalType":"address"}],"stateMutability":"nonpayable"},
+  {"type":"function","name":"BPS_DENOMINATOR","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
+  {"type":"function","name":"PLATFORM_FEE_BPS","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
+  {"type":"function","name":"accumulatedFees","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
+  {"type":"function","name":"claimProceeds","inputs":[{"name":"launchId","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"claimRefund","inputs":[{"name":"launchId","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"claimTokens","inputs":[{"name":"launchId","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"contribute","inputs":[{"name":"launchId","type":"uint256","internalType":"uint256"},{"name":"usdcAmount","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"contributions","inputs":[{"name":"","type":"uint256","internalType":"uint256"},{"name":"","type":"address","internalType":"address"}],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
+  {"type":"function","name":"createLaunch","inputs":[{"name":"name","type":"string","internalType":"string"},{"name":"symbol","type":"string","internalType":"string"},{"name":"description","type":"string","internalType":"string"},{"name":"totalSupply","type":"uint256","internalType":"uint256"},{"name":"pricePerToken","type":"uint256","internalType":"uint256"},{"name":"softCap","type":"uint256","internalType":"uint256"},{"name":"hardCap","type":"uint256","internalType":"uint256"},{"name":"startTime","type":"uint256","internalType":"uint256"},{"name":"endTime","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"launchId","type":"uint256","internalType":"uint256"}],"stateMutability":"nonpayable"},
+  {"type":"function","name":"creatorProceeds","inputs":[{"name":"","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
+  {"type":"function","name":"finalize","inputs":[{"name":"launchId","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"getLaunchCount","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
+  {"type":"function","name":"launches","inputs":[{"name":"","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"creator","type":"address","internalType":"address"},{"name":"name","type":"string","internalType":"string"},{"name":"symbol","type":"string","internalType":"string"},{"name":"description","type":"string","internalType":"string"},{"name":"totalSupply","type":"uint256","internalType":"uint256"},{"name":"pricePerToken","type":"uint256","internalType":"uint256"},{"name":"softCap","type":"uint256","internalType":"uint256"},{"name":"hardCap","type":"uint256","internalType":"uint256"},{"name":"startTime","type":"uint256","internalType":"uint256"},{"name":"endTime","type":"uint256","internalType":"uint256"},{"name":"raised","type":"uint256","internalType":"uint256"},{"name":"tokenAddress","type":"address","internalType":"address"},{"name":"finalized","type":"bool","internalType":"bool"},{"name":"succeeded","type":"bool","internalType":"bool"}],"stateMutability":"view"},
+  {"type":"function","name":"owner","inputs":[],"outputs":[{"name":"","type":"address","internalType":"address"}],"stateMutability":"view"},
+  {"type":"function","name":"refundClaimed","inputs":[{"name":"","type":"uint256","internalType":"uint256"},{"name":"","type":"address","internalType":"address"}],"outputs":[{"name":"","type":"bool","internalType":"bool"}],"stateMutability":"view"},
+  {"type":"function","name":"renounceOwnership","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"tokenClaimed","inputs":[{"name":"","type":"uint256","internalType":"uint256"},{"name":"","type":"address","internalType":"address"}],"outputs":[{"name":"","type":"bool","internalType":"bool"}],"stateMutability":"view"},
+  {"type":"function","name":"tokensPurchased","inputs":[{"name":"","type":"uint256","internalType":"uint256"},{"name":"","type":"address","internalType":"address"}],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
+  {"type":"function","name":"totalTokensSold","inputs":[{"name":"","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
+  {"type":"function","name":"transferOwnership","inputs":[{"name":"newOwner","type":"address","internalType":"address"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"usdc","inputs":[],"outputs":[{"name":"","type":"address","internalType":"contract IERC20"}],"stateMutability":"view"},
+  {"type":"function","name":"withdrawFees","inputs":[{"name":"to","type":"address","internalType":"address"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"event","name":"Contributed","inputs":[{"name":"launchId","type":"uint256","indexed":true,"internalType":"uint256"},{"name":"contributor","type":"address","indexed":true,"internalType":"address"},{"name":"amount","type":"uint256","indexed":false,"internalType":"uint256"}],"anonymous":false},
+  {"type":"event","name":"LaunchCreated","inputs":[{"name":"launchId","type":"uint256","indexed":true,"internalType":"uint256"},{"name":"creator","type":"address","indexed":true,"internalType":"address"},{"name":"name","type":"string","indexed":false,"internalType":"string"},{"name":"symbol","type":"string","indexed":false,"internalType":"string"}],"anonymous":false},
+  {"type":"event","name":"LaunchFinalized","inputs":[{"name":"launchId","type":"uint256","indexed":true,"internalType":"uint256"},{"name":"succeeded","type":"bool","indexed":false,"internalType":"bool"},{"name":"raised","type":"uint256","indexed":false,"internalType":"uint256"}],"anonymous":false},
+  {"type":"event","name":"OwnershipTransferred","inputs":[{"name":"previousOwner","type":"address","indexed":true,"internalType":"address"},{"name":"newOwner","type":"address","indexed":true,"internalType":"address"}],"anonymous":false},
+  {"type":"event","name":"ProceedsClaimed","inputs":[{"name":"launchId","type":"uint256","indexed":true,"internalType":"uint256"},{"name":"recipient","type":"address","indexed":true,"internalType":"address"},{"name":"amount","type":"uint256","indexed":false,"internalType":"uint256"}],"anonymous":false},
+  {"type":"event","name":"RefundClaimed","inputs":[{"name":"launchId","type":"uint256","indexed":true,"internalType":"uint256"},{"name":"contributor","type":"address","indexed":true,"internalType":"address"},{"name":"amount","type":"uint256","indexed":false,"internalType":"uint256"}],"anonymous":false},
+  {"type":"event","name":"TokensClaimed","inputs":[{"name":"launchId","type":"uint256","indexed":true,"internalType":"uint256"},{"name":"contributor","type":"address","indexed":true,"internalType":"address"},{"name":"amount","type":"uint256","indexed":false,"internalType":"uint256"}],"anonymous":false},
+  {"type":"error","name":"AlreadyClaimed","inputs":[]},
+  {"type":"error","name":"AlreadyFinalized","inputs":[]},
+  {"type":"error","name":"HardCapReached","inputs":[]},
+  {"type":"error","name":"InvalidAddress","inputs":[]},
+  {"type":"error","name":"InvalidCaps","inputs":[]},
+  {"type":"error","name":"InvalidContributionAmount","inputs":[]},
+  {"type":"error","name":"InvalidLaunch","inputs":[]},
+  {"type":"error","name":"InvalidTimeRange","inputs":[]},
+  {"type":"error","name":"LaunchFailed","inputs":[]},
+  {"type":"error","name":"LaunchNotActive","inputs":[]},
+  {"type":"error","name":"LaunchSucceeded","inputs":[]},
+  {"type":"error","name":"NotContributor","inputs":[]},
+  {"type":"error","name":"NotFinalized","inputs":[]},
+  {"type":"error","name":"OwnableInvalidOwner","inputs":[{"name":"owner","type":"address","internalType":"address"}]},
+  {"type":"error","name":"OwnableUnauthorizedAccount","inputs":[{"name":"account","type":"address","internalType":"address"}]},
+  {"type":"error","name":"ReentrancyGuardReentrantCall","inputs":[]},
+  {"type":"error","name":"SafeERC20FailedOperation","inputs":[{"name":"token","type":"address","internalType":"address"}]},
+  {"type":"error","name":"Unauthorized","inputs":[]},
+  {"type":"error","name":"ZeroAmount","inputs":[]}
+] as const;
 
 export const ARC_MAINNET_CHAIN_ID = 5042;
 export const USDC_ADDRESS = '0x3600000000000000000000000000000000000000' as const;
