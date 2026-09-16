@@ -172,6 +172,77 @@ export function useWallet(): UseWalletReturn {
         }),
       );
 
+      // ── Live USD price enrichment ──────────────────────────────────────────
+      // Run after on-chain reads so balances appear instantly while prices load.
+      try {
+        // Known symbol → CoinGecko ID map for stable / major tokens
+        const cgIdMap: Record<string, string> = {
+          usdc: 'usd-coin', usdt: 'tether', eth: 'ethereum', weth: 'weth',
+          btc: 'bitcoin', wbtc: 'wrapped-bitcoin', bnb: 'binancecoin',
+          sol: 'solana', matic: 'matic-network', arb: 'arbitrum',
+          op: 'optimism', avax: 'avalanche-2', link: 'chainlink',
+          uni: 'uniswap', aave: 'aave', dai: 'dai',
+        };
+
+        await Promise.allSettled(results.map(async (token, idx) => {
+          // USDC on Arc is always $1.00
+          if (token.symbol.toUpperCase() === 'USDC') {
+            results[idx] = { ...token, usdValue: token.balance, change24h: '0' };
+            return;
+          }
+
+          // 1. Try DexScreener by contract address (works for any EVM token)
+          if (!token.isNative && token.address && token.address !== '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') {
+            try {
+              const r = await fetch(
+                `https://api.dexscreener.com/latest/dex/tokens/${token.address}`,
+                { signal: AbortSignal.timeout(5000) },
+              );
+              if (r.ok) {
+                const d = await r.json() as { pairs?: Array<{ priceUsd?: string; priceChange?: { h24?: number }; volume?: { h24?: number } }> };
+                if (d.pairs && d.pairs.length > 0) {
+                  const top = d.pairs.sort((a, b) => (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0))[0];
+                  if (top.priceUsd) {
+                    const price = parseFloat(top.priceUsd);
+                    const bal = parseFloat(token.balance);
+                    results[idx] = {
+                      ...token,
+                      usdValue: (bal * price).toFixed(4),
+                      change24h: String(top.priceChange?.h24 ?? 0),
+                    };
+                    return;
+                  }
+                }
+              }
+            } catch { /* ignore */ }
+          }
+
+          // 2. Fallback: CoinGecko by symbol for major tokens
+          const cgId = cgIdMap[token.symbol.toLowerCase()];
+          if (cgId) {
+            try {
+              const r = await fetch(
+                `https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=usd&include_24hr_change=true`,
+                { signal: AbortSignal.timeout(5000) },
+              );
+              if (r.ok) {
+                const d = await r.json() as Record<string, { usd?: number; usd_24h_change?: number }>;
+                const e = d[cgId];
+                if (e?.usd) {
+                  const price = e.usd;
+                  const bal = parseFloat(token.balance);
+                  results[idx] = {
+                    ...token,
+                    usdValue: (bal * price).toFixed(4),
+                    change24h: String(e.usd_24h_change ?? 0),
+                  };
+                }
+              }
+            } catch { /* ignore */ }
+          }
+        }));
+      } catch { /* price enrichment is best-effort */ }
+
       setBalances(results);
       setBalancesLoaded(true);
     } catch (e) {
