@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, Check, Loader2, AlertTriangle, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
-import { ethers } from 'ethers';
 import {
   LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, ARC_MAINNET_CHAIN_ID,
 } from '../launchpad-contract';
@@ -97,7 +96,7 @@ export function CreateLaunch({ onBack, onCreated, onNavigateToWallet }: CreateLa
 
       const hash = await walletCtx.callContract(
         effectiveAddress,
-        LAUNCHPAD_ABI as ethers.InterfaceAbi,
+        LAUNCHPAD_ABI,
         'createLaunch',
         [form.name, form.symbol.toUpperCase(), form.description,
           totalSupply, pricePerToken, softCap, hardCap, startTime, endTime],

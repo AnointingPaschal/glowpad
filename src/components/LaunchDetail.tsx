@@ -201,22 +201,22 @@ export function LaunchDetail({ launchId, onBack, onNavigateToWallet }: LaunchDet
           title={`Confirm ${pendingAction}`}
           onConfirm={pw => {
             if (pendingAction === 'approve') {
-              void doAction('approve', erc20Abi as ethers.InterfaceAbi, 'approve',
+              void doAction('approve', erc20Abi, 'approve',
                 [effectiveLaunchpad, parsedAmount], pw, USDC_ADDRESS);
             } else if (pendingAction === 'contribute') {
-              void doAction('contribute', LAUNCHPAD_ABI as ethers.InterfaceAbi, 'contribute',
+              void doAction('contribute', LAUNCHPAD_ABI, 'contribute',
                 [BigInt(launchId), parsedAmount], pw);
             } else if (pendingAction === 'finalize') {
-              void doAction('finalize', LAUNCHPAD_ABI as ethers.InterfaceAbi, 'finalize',
+              void doAction('finalize', LAUNCHPAD_ABI, 'finalize',
                 [BigInt(launchId)], pw);
             } else if (pendingAction === 'claimTokens') {
-              void doAction('claimTokens', LAUNCHPAD_ABI as ethers.InterfaceAbi, 'claimTokens',
+              void doAction('claimTokens', LAUNCHPAD_ABI, 'claimTokens',
                 [BigInt(launchId)], pw);
             } else if (pendingAction === 'claimRefund') {
-              void doAction('claimRefund', LAUNCHPAD_ABI as ethers.InterfaceAbi, 'claimRefund',
+              void doAction('claimRefund', LAUNCHPAD_ABI, 'claimRefund',
                 [BigInt(launchId)], pw);
             } else if (pendingAction === 'claimProceeds') {
-              void doAction('claimProceeds', LAUNCHPAD_ABI as ethers.InterfaceAbi, 'claimProceeds',
+              void doAction('claimProceeds', LAUNCHPAD_ABI, 'claimProceeds',
                 [BigInt(launchId)], pw);
             }
           }}

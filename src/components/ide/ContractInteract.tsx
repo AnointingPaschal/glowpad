@@ -1,8 +1,14 @@
+/**
+ * ContractInteract — read/write any EVM contract using the built-in wallet.
+ * No wagmi ConnectKit dependency — uses walletContext (ethers.js).
+ */
 import { useState } from 'react';
-import { useAccount, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { ethers } from 'ethers';
 import { isAddress } from 'viem';
-import { Play, Search, ChevronDown, ChevronRight, Loader2, Check } from 'lucide-react';
+import { Play, Search, ChevronDown, ChevronRight, Loader2, Check, AlertTriangle } from 'lucide-react';
 import { ARC_MAINNET_CHAIN_ID } from '../../launchpad-contract';
+import { requireChain } from '@/onchain-facts';
+import { useWalletContext } from '../../wallet/walletContext';
 import { toast } from 'sonner';
 
 interface FunctionParam {
@@ -18,7 +24,6 @@ interface AbiFunction {
   stateMutability?: string;
 }
 
-// ── Parse ABI input ────────────────────────────────────────────────────────
 function parseAbi(raw: string): AbiFunction[] | null {
   try {
     return JSON.parse(raw) as AbiFunction[];
@@ -35,44 +40,103 @@ function isWriteFunction(fn: AbiFunction) {
   return fn.type === 'function' && fn.stateMutability !== 'view' && fn.stateMutability !== 'pure';
 }
 
+// ── PwModal ────────────────────────────────────────────────────────────────
+function PwModal({ title, onConfirm, onCancel, loading, error }: {
+  title: string; onConfirm: (pw: string) => void;
+  onCancel: () => void; loading: boolean; error?: string;
+}) {
+  const [pw, setPw] = useState('');
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-xs rounded-3xl p-6 space-y-4 bg-[var(--surface)] border border-[var(--border)]">
+        <p className="text-sm font-semibold text-[var(--ink)]">{title}</p>
+        <input type="password" autoFocus
+          className="w-full px-4 py-3 rounded-2xl text-sm bg-[var(--surface-muted)] border border-[var(--border)] text-[var(--ink)] focus:outline-none"
+          placeholder="Wallet password" value={pw}
+          onChange={e => setPw(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') onConfirm(pw); }} />
+        {error && <p className="text-xs text-[var(--danger)] flex items-center gap-1"><AlertTriangle size={12} />{error}</p>}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-3 rounded-2xl text-sm text-[var(--subtle)] border border-[var(--border)]">Cancel</button>
+          <button onClick={() => onConfirm(pw)} disabled={loading || !pw}
+            className="flex-1 py-3 rounded-2xl text-sm font-semibold text-white bg-[var(--accent)] disabled:opacity-40 flex items-center justify-center gap-2">
+            {loading && <Loader2 size={14} className="animate-spin" />}Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Single function row ────────────────────────────────────────────────────
 function FunctionRow({
   fn,
+  contractAddress,
   isWrite,
 }: {
   fn: AbiFunction;
-  contractAddress?: `0x${string}`;
+  contractAddress: string;
   isWrite: boolean;
 }) {
-  const { address, chainId } = useAccount();
-  const { switchChain } = useSwitchChain();
+  const walletCtx = useWalletContext();
   const [expanded, setExpanded] = useState(false);
   const [args, setArgs] = useState<Record<string, string>>({});
   const [readResult, setReadResult] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
+  const [txHash, setTxHash] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState('');
 
-  const isWrongChain = chainId !== ARC_MAINNET_CHAIN_ID;
+  const chainId = walletCtx?.activeChainId ?? ARC_MAINNET_CHAIN_ID;
+  const address = walletCtx?.activeWallet?.address;
 
-  const { data: txHash, isPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
-
-  // Args are built for UI display purposes only; actual call is simulated
-  void (fn.inputs ?? []).map(inp => args[inp.name] ?? '');
-
-  const handleRead = () => {
+  const handleRead = async () => {
     setIsReading(true);
     setReadResult(null);
-    // Simulate read result for demo
-    setTimeout(() => {
-      setReadResult('"Simulated read result — connect to Arc for live data"');
+    try {
+      const chain = requireChain(chainId);
+      const provider = new ethers.JsonRpcProvider(chain.rpcUrls[0]);
+      const contract = new ethers.Contract(contractAddress, [fn], provider);
+      const fnName = fn.name!;
+      const argValues = (fn.inputs ?? []).map(inp => args[inp.name] ?? '');
+      const result = await contract[fnName](...argValues) as unknown;
+      setReadResult(JSON.stringify(result, (_, v) =>
+        typeof v === 'bigint' ? v.toString() : v as unknown, 2));
+    } catch (e) {
+      setReadResult(`Error: ${(e as Error).message.slice(0, 200)}`);
+    } finally {
       setIsReading(false);
-    }, 600);
+    }
   };
 
   const handleWrite = () => {
-    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
-    if (!address) { toast.error('Connect wallet'); return; }
-    toast.info('Write call simulated — paste a real ABI + address for live interaction');
+    if (!address) { toast.error('Set up your Glowpad wallet first'); return; }
+    setTxError('');
+    setShowPw(true);
+  };
+
+  const doWrite = async (password: string) => {
+    if (!walletCtx) return;
+    setTxLoading(true);
+    setTxError('');
+    try {
+      const argValues = (fn.inputs ?? []).map(inp => args[inp.name] ?? '');
+      const hash = await walletCtx.callContract(
+        contractAddress,
+        [fn],
+        fn.name!,
+        argValues,
+        password,
+      );
+      setTxHash(hash);
+      setShowPw(false);
+      toast.success('Tx submitted: ' + hash.slice(0, 10) + '…');
+    } catch (e) {
+      setTxError((e as Error).message.slice(0, 140));
+    } finally {
+      setTxLoading(false);
+    }
   };
 
   const mutabilityColor: Record<string, string> = {
@@ -83,75 +147,87 @@ function FunctionRow({
   };
 
   return (
-    <div className="border border-[var(--border)] rounded-xl overflow-hidden">
-      <button
-        onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center gap-2 px-4 py-3 bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors text-left"
-      >
-        {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        <span className="mono text-xs text-[var(--ink)] font-medium flex-1">{fn.name}</span>
-        <span className={`text-xs mono ${mutabilityColor[fn.stateMutability ?? 'nonpayable'] ?? 'text-[var(--muted)]'}`}>
-          {fn.stateMutability}
-        </span>
-      </button>
-
-      {expanded && (
-        <div className="px-4 pb-4 pt-2 bg-[var(--surface-muted)] space-y-3">
-          {(fn.inputs ?? []).length > 0 && (
-            <div className="space-y-2">
-              {(fn.inputs ?? []).map(inp => (
-                <div key={inp.name}>
-                  <label className="block text-xs text-[var(--subtle)] mb-1 mono">{inp.name} ({inp.type})</label>
-                  <input
-                    value={args[inp.name] ?? ''}
-                    onChange={e => setArgs(a => ({ ...a, [inp.name]: e.target.value }))}
-                    placeholder={inp.type}
-                    className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none focus:border-[var(--accent)] mono"
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {isWrite ? (
-            <div className="space-y-2">
-              <button
-                onClick={handleWrite}
-                disabled={isPending || isConfirming}
-                className="flex items-center gap-1.5 rounded-lg bg-[var(--warning)]/10 border border-[var(--warning)]/20 text-[var(--warning)] text-xs font-semibold px-4 py-2 hover:bg-[var(--warning)]/20 disabled:opacity-50 transition-colors"
-              >
-                {isPending || isConfirming ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                {isPending ? 'Confirm…' : isConfirming ? 'Confirming…' : 'transact'}
-              </button>
-              {isSuccess && txHash && (
-                <p className="text-xs text-[var(--success)] flex items-center gap-1"><Check size={12} /> Tx submitted</p>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <button
-                onClick={handleRead}
-                disabled={isReading}
-                className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)]/10 border border-[var(--accent)]/20 text-[var(--accent)] text-xs font-semibold px-4 py-2 hover:bg-[var(--accent)]/20 disabled:opacity-50 transition-colors"
-              >
-                {isReading ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                call
-              </button>
-              {readResult !== null && (
-                <div className="rounded-lg bg-[var(--surface)] px-3 py-2 mono text-xs text-[var(--ink)] break-all">
-                  {readResult}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+    <>
+      {showPw && (
+        <PwModal
+          title={`Sign ${fn.name ?? 'call'}`}
+          onConfirm={pw => { void doWrite(pw); }}
+          onCancel={() => { setShowPw(false); setTxError(''); }}
+          loading={txLoading}
+          error={txError}
+        />
       )}
-    </div>
+      <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="w-full flex items-center gap-2 px-4 py-3 bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors text-left"
+        >
+          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <span className="mono text-xs text-[var(--ink)] font-medium flex-1">{fn.name}</span>
+          <span className={`text-xs mono ${mutabilityColor[fn.stateMutability ?? 'nonpayable'] ?? 'text-[var(--muted)]'}`}>
+            {fn.stateMutability}
+          </span>
+        </button>
+
+        {expanded && (
+          <div className="px-4 pb-4 pt-2 bg-[var(--surface-muted)] space-y-3">
+            {(fn.inputs ?? []).length > 0 && (
+              <div className="space-y-2">
+                {(fn.inputs ?? []).map(inp => (
+                  <div key={inp.name}>
+                    <label className="block text-xs text-[var(--subtle)] mb-1 mono">{inp.name} ({inp.type})</label>
+                    <input
+                      value={args[inp.name] ?? ''}
+                      onChange={e => setArgs(a => ({ ...a, [inp.name]: e.target.value }))}
+                      placeholder={inp.type}
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs text-[var(--ink)] placeholder-[var(--subtle)] focus:outline-none focus:border-[var(--accent)] mono"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {isWrite ? (
+              <div className="space-y-2">
+                <button
+                  onClick={handleWrite}
+                  disabled={txLoading}
+                  className="flex items-center gap-1.5 rounded-lg bg-[var(--warning)]/10 border border-[var(--warning)]/20 text-[var(--warning)] text-xs font-semibold px-4 py-2 hover:bg-[var(--warning)]/20 disabled:opacity-50 transition-colors"
+                >
+                  {txLoading ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                  transact
+                </button>
+                {txHash && (
+                  <p className="text-xs text-[var(--success)] flex items-center gap-1"><Check size={12} /> {txHash.slice(0, 20)}…</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  onClick={() => { void handleRead(); }}
+                  disabled={isReading}
+                  className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)]/10 border border-[var(--accent)]/20 text-[var(--accent)] text-xs font-semibold px-4 py-2 hover:bg-[var(--accent)]/20 disabled:opacity-50 transition-colors"
+                >
+                  {isReading ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                  call
+                </button>
+                {readResult !== null && (
+                  <div className="rounded-lg bg-[var(--surface)] px-3 py-2 mono text-xs text-[var(--ink)] break-all whitespace-pre-wrap">
+                    {readResult}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
 // ── Main interact panel ────────────────────────────────────────────────────
 export function ContractInteract() {
+  const walletCtx = useWalletContext();
   const [contractAddr, setContractAddr] = useState('');
   const [abiRaw, setAbiRaw] = useState('');
   const [parsed, setParsed] = useState<AbiFunction[] | null>(null);
@@ -160,6 +236,7 @@ export function ContractInteract() {
   const [activeSection, setActiveSection] = useState<'read' | 'write'>('read');
 
   const addrValid = isAddress(contractAddr);
+  const hasWallet = !!walletCtx?.activeWallet;
 
   const handleLoad = () => {
     const result = parseAbi(abiRaw);
@@ -179,6 +256,12 @@ export function ContractInteract() {
     <div className="h-full flex flex-col overflow-hidden">
       {/* Setup bar */}
       <div className="shrink-0 p-4 border-b border-[var(--border)] space-y-3 bg-[var(--surface-muted)]">
+        {!hasWallet && (
+          <div className="bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-xl px-3 py-2 text-xs text-[var(--warning)] flex items-center gap-2">
+            <AlertTriangle size={12} />
+            Set up your Glowpad wallet (Wallet tab) to sign write transactions.
+          </div>
+        )}
         <div>
           <label className="block text-xs text-[var(--subtle)] mb-1.5 font-semibold uppercase tracking-wide">Contract Address</label>
           <input
@@ -213,10 +296,8 @@ export function ContractInteract() {
         </button>
       </div>
 
-      {/* Functions */}
       {parsed && (
         <div className="flex-1 min-h-0 flex flex-col">
-          {/* Filter + tabs */}
           <div className="shrink-0 p-3 border-b border-[var(--border)] flex items-center gap-2">
             <input
               value={filter}
@@ -251,7 +332,7 @@ export function ContractInteract() {
               <FunctionRow
                 key={`${fn.name}-${i}`}
                 fn={fn}
-                contractAddress={contractAddr as `0x${string}`}
+                contractAddress={contractAddr}
                 isWrite={activeSection === 'write'}
               />
             ))}
@@ -265,11 +346,10 @@ export function ContractInteract() {
       {!parsed && (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-xs text-[var(--subtle)] text-center max-w-xs">
-            Enter a contract address and ABI above, then click Load Contract to interact with any deployed contract on Arc.
+            Enter a contract address and ABI above, then click Load Contract to interact with any deployed contract on Arc or EVM chains.
           </p>
         </div>
       )}
     </div>
   );
 }
-
