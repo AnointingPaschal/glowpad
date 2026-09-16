@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #070e1a;
+  --bg-gradient: linear-gradient(180deg, #070e1a 0%, #0d1b2f 100%);
+  --surface: rgba(255, 255, 255, 0.055);
+  --surface-strong: rgba(255, 255, 255, 0.09);
+  --surface-muted: #111d30;
+  --surface-hover: rgba(255,255,255,0.07);
+  --ink: #f0f4fc;
+  --ink-2: #d8e6f8;
+  --muted: #94aac8;
+  --subtle: #5c7a99;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(172, 198, 233, 0.28);
+  --accent: #4e9ff5;
+  --accent-2: #2563eb;
+  --accent-hover: #76b8ff;
+  --glow: rgba(78, 159, 245, 0.18);
+  --success: #4ade80;
+  --danger: #f87171;
+  --warning: #fbbf24;
+  --sidebar-w: 220px;
+  --header-h: 52px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+.display { font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.02em; }
+.mono { font-family: 'JetBrains Mono', Menlo, monospace; font-size: 0.8125rem; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+/* Glass cards */
+.glass {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.glass-strong {
+  background: var(--surface-strong);
+  border: 1px solid var(--border-strong);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Glow accent strip */
+.glow-strip {
+  background: linear-gradient(90deg, var(--accent) 0%, #7c3aed 100%);
+}
+
+/* Animated gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, var(--accent) 0%, #a78bfa 60%, var(--accent-hover) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Tab active indicator */
+.tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+}
+
+/* Pulse animation for live status */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
+
+/* Sonner overrides */
+[data-sonner-toaster] { font-family: 'DM Sans', sans-serif !important; }
+
+/* Input resets */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+input[type=number] { -moz-appearance: textfield; }
