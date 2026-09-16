@@ -155,7 +155,7 @@ export default function App() {
           {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-xs text-[var(--subtle)]">
             <NetworkArc size={12} variant="branded" />
-            <span>Arc Testnet</span>
+            <span>Arc Mainnet</span>
             <ChevronRight size={12} />
             <span className="text-[var(--ink)] font-medium">{currentItem.label}</span>
           </div>

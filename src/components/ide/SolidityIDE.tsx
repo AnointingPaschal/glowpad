@@ -7,7 +7,7 @@ import {
   Loader2, Package,
 } from 'lucide-react';
 import { useAccount, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { ARC_TESTNET_CHAIN_ID } from '../../launchpad-contract';
+import { ARC_MAINNET_CHAIN_ID } from '../../launchpad-contract';
 import { toast } from 'sonner';
 
 // ── Starter templates ──────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ export function SolidityIDE() {
   const [deployedAddress, setDeployedAddress] = useState('');
 
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
-  const isWrongChain = chainId !== ARC_TESTNET_CHAIN_ID;
+  const isWrongChain = chainId !== ARC_MAINNET_CHAIN_ID;
 
   // ── Deploy (simulated bytecode deploy for demo) ────────────────────────
   const { data: deployHash, isPending: isDeployPending } = useWriteContract();
@@ -274,7 +274,7 @@ export function SolidityIDE() {
 
   const handleDeploy = () => {
     if (!compileResult?.success) { toast.error('Compile first'); return; }
-    if (isWrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
     if (!address) { toast.error('Connect wallet first'); return; }
 
     // Simulate deploy: call the launchpad's getLaunchCount as a stand-in read
@@ -444,11 +444,11 @@ export function SolidityIDE() {
                       isWrongChain ? 'bg-[var(--danger)]' : 'bg-[var(--success)]'
                     }`} />
                     <span className="text-[var(--muted)]">
-                      {isWrongChain ? 'Wrong network' : 'Arc Testnet'}
+                      {isWrongChain ? 'Wrong network' : 'Arc Mainnet'}
                     </span>
                     {isWrongChain && (
                       <button
-                        onClick={() => switchChain({ chainId: ARC_TESTNET_CHAIN_ID })}
+                        onClick={() => switchChain({ chainId: ARC_MAINNET_CHAIN_ID })}
                         className="ml-auto text-[var(--accent)] hover:text-[var(--accent-hover)] font-medium"
                       >
                         Switch

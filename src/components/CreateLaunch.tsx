@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useWriteContract, useWaitForTransactionReceipt, useAccount, useSwitchChain } from 'wagmi';
 import { ArrowLeft, Check } from 'lucide-react';
-import { LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, ARC_TESTNET_CHAIN_ID } from '../launchpad-contract';
+import { LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, ARC_MAINNET_CHAIN_ID } from '../launchpad-contract';
 
 interface CreateLaunchProps {
   onBack: () => void;
@@ -30,11 +30,11 @@ export function CreateLaunch({ onBack, onCreated }: CreateLaunchProps) {
   const { writeContract, data: hash, isPending, reset } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  const isWrongChain = chainId !== ARC_TESTNET_CHAIN_ID;
+  const isWrongChain = chainId !== ARC_MAINNET_CHAIN_ID;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isWrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
 
     const now = BigInt(Math.floor(Date.now() / 1000));
     const startTime = now + BigInt(Math.round(parseFloat(form.startOffsetHours) * 3600));
@@ -59,7 +59,7 @@ export function CreateLaunch({ onBack, onCreated }: CreateLaunchProps) {
         startTime,
         endTime,
       ],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_MAINNET_CHAIN_ID,
     });
   };
 
@@ -235,10 +235,10 @@ export function CreateLaunch({ onBack, onCreated }: CreateLaunchProps) {
             {isWrongChain ? (
               <button
                 type="button"
-                onClick={() => switchChain({ chainId: ARC_TESTNET_CHAIN_ID })}
+                onClick={() => switchChain({ chainId: ARC_MAINNET_CHAIN_ID })}
                 className="w-full rounded-xl bg-[var(--accent)] text-[#0d1b2f] font-semibold py-3 hover:bg-[var(--accent-hover)] transition-colors"
               >
-                Switch to Arc Testnet
+                Switch to Arc
               </button>
             ) : (
               <button

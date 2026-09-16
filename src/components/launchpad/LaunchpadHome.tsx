@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useReadContract } from 'wagmi';
 import { Rocket, Plus, TrendingUp, DollarSign, Activity } from 'lucide-react';
 import { TokenUSDC } from '@web3icons/react';
-import { LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, ARC_TESTNET_CHAIN_ID, formatUsdc } from '../../launchpad-contract';
+import { LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, ARC_MAINNET_CHAIN_ID, formatUsdc } from '../../launchpad-contract';
 import { LaunchCard } from '../LaunchCard';
 import { LaunchDetail } from '../LaunchDetail';
 import { CreateLaunch } from '../CreateLaunch';
@@ -16,7 +16,7 @@ export function LaunchpadHome() {
     address: LAUNCHPAD_ADDRESS,
     abi: LAUNCHPAD_ABI,
     functionName: 'getLaunchCount',
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
     query: { refetchInterval: 12_000 },
   }) as { data: bigint | undefined; refetch: () => void };
 
@@ -24,7 +24,7 @@ export function LaunchpadHome() {
     address: LAUNCHPAD_ADDRESS,
     abi: LAUNCHPAD_ABI,
     functionName: 'accumulatedFees',
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
     query: { refetchInterval: 30_000 },
   }) as { data: bigint | undefined };
 

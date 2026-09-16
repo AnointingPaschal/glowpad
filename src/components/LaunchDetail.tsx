@@ -6,7 +6,7 @@ import {
 import { erc20Abi } from 'viem';
 import { ArrowLeft, ExternalLink, Check } from 'lucide-react';
 import {
-  LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, ARC_TESTNET_CHAIN_ID, USDC_ADDRESS,
+  LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, ARC_MAINNET_CHAIN_ID, USDC_ADDRESS,
   LaunchData, getLaunchStatus, formatUsdc, parseUsdc, formatToken, formatCountdown,
   progressPct, formatAddress,
 } from '../launchpad-contract';
@@ -35,7 +35,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
     abi: LAUNCHPAD_ABI,
     functionName: 'launches',
     args: [BigInt(launchId)],
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
   }) as { data: LaunchData | undefined; refetch: () => void };
 
   const { data: userContribution } = useReadContract({
@@ -43,7 +43,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
     abi: LAUNCHPAD_ABI,
     functionName: 'contributions',
     args: address ? [BigInt(launchId), address] : undefined,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
     query: { enabled: !!address },
   }) as { data: bigint | undefined };
 
@@ -52,7 +52,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
     abi: LAUNCHPAD_ABI,
     functionName: 'tokensPurchased',
     args: address ? [BigInt(launchId), address] : undefined,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
     query: { enabled: !!address },
   }) as { data: bigint | undefined };
 
@@ -61,7 +61,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
     abi: LAUNCHPAD_ABI,
     functionName: 'tokenClaimed',
     args: address ? [BigInt(launchId), address] : undefined,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
     query: { enabled: !!address },
   }) as { data: boolean | undefined };
 
@@ -70,7 +70,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
     abi: LAUNCHPAD_ABI,
     functionName: 'refundClaimed',
     args: address ? [BigInt(launchId), address] : undefined,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
     query: { enabled: !!address },
   }) as { data: boolean | undefined };
 
@@ -79,7 +79,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
     abi: LAUNCHPAD_ABI,
     functionName: 'creatorProceeds',
     args: [BigInt(launchId)],
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
   }) as { data: bigint | undefined };
 
   const { data: usdcAllowance } = useReadContract({
@@ -87,7 +87,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
     abi: erc20Abi,
     functionName: 'allowance',
     args: address ? [address, LAUNCHPAD_ADDRESS] : undefined,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
     query: { enabled: !!address },
   }) as { data: bigint | undefined };
 
@@ -157,7 +157,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
 
   const status = getLaunchStatus(launch);
   const pct = progressPct(launch.raised, launch.hardCap);
-  const isWrongChain = chainId !== ARC_TESTNET_CHAIN_ID;
+  const isWrongChain = chainId !== ARC_MAINNET_CHAIN_ID;
 
   let parsedAmount = 0n;
   let amountError = '';
@@ -176,69 +176,69 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
   const isCreator = address?.toLowerCase() === launch.creator.toLowerCase();
 
   const handleApprove = () => {
-    if (isWrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
     approve({
       address: USDC_ADDRESS,
       abi: erc20Abi,
       functionName: 'approve',
       args: [LAUNCHPAD_ADDRESS, parsedAmount],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_MAINNET_CHAIN_ID,
     });
   };
 
   const handleContribute = () => {
-    if (isWrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
     if (amountError || parsedAmount === 0n) return;
     contribute({
       address: LAUNCHPAD_ADDRESS,
       abi: LAUNCHPAD_ABI,
       functionName: 'contribute',
       args: [BigInt(launchId), parsedAmount],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_MAINNET_CHAIN_ID,
     });
   };
 
   const handleFinalize = () => {
-    if (isWrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
     finalize({
       address: LAUNCHPAD_ADDRESS,
       abi: LAUNCHPAD_ABI,
       functionName: 'finalize',
       args: [BigInt(launchId)],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_MAINNET_CHAIN_ID,
     });
   };
 
   const handleClaimTokens = () => {
-    if (isWrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
     claimTokens({
       address: LAUNCHPAD_ADDRESS,
       abi: LAUNCHPAD_ABI,
       functionName: 'claimTokens',
       args: [BigInt(launchId)],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_MAINNET_CHAIN_ID,
     });
   };
 
   const handleClaimRefund = () => {
-    if (isWrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
     claimRefund({
       address: LAUNCHPAD_ADDRESS,
       abi: LAUNCHPAD_ABI,
       functionName: 'claimRefund',
       args: [BigInt(launchId)],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_MAINNET_CHAIN_ID,
     });
   };
 
   const handleClaimProceeds = () => {
-    if (isWrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
     claimProceeds({
       address: LAUNCHPAD_ADDRESS,
       abi: LAUNCHPAD_ABI,
       functionName: 'claimProceeds',
       args: [BigInt(launchId)],
-      chainId: ARC_TESTNET_CHAIN_ID,
+      chainId: ARC_MAINNET_CHAIN_ID,
     });
   };
 
@@ -334,7 +334,7 @@ export function LaunchDetail({ launchId, onBack }: LaunchDetailProps) {
         </div>
       ) : isWrongChain ? (
         <button
-          onClick={() => switchChain({ chainId: ARC_TESTNET_CHAIN_ID })}
+          onClick={() => switchChain({ chainId: ARC_MAINNET_CHAIN_ID })}
           className="w-full rounded-xl bg-[var(--accent)] text-[#0d1b2f] font-semibold py-3 hover:bg-[var(--accent-hover)] transition-colors"
         >
           Switch to Arc Testnet

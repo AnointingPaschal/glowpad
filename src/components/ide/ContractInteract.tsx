@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAccount, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { isAddress } from 'viem';
 import { Play, Search, ChevronDown, ChevronRight, Loader2, Check } from 'lucide-react';
-import { ARC_TESTNET_CHAIN_ID } from '../../launchpad-contract';
+import { ARC_MAINNET_CHAIN_ID } from '../../launchpad-contract';
 import { toast } from 'sonner';
 
 interface FunctionParam {
@@ -51,7 +51,7 @@ function FunctionRow({
   const [readResult, setReadResult] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
 
-  const isWrongChain = chainId !== ARC_TESTNET_CHAIN_ID;
+  const isWrongChain = chainId !== ARC_MAINNET_CHAIN_ID;
 
   const { data: txHash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
@@ -70,7 +70,7 @@ function FunctionRow({
   };
 
   const handleWrite = () => {
-    if (isWrongChain) { switchChain({ chainId: ARC_TESTNET_CHAIN_ID }); return; }
+    if (isWrongChain) { switchChain({ chainId: ARC_MAINNET_CHAIN_ID }); return; }
     if (!address) { toast.error('Connect wallet'); return; }
     toast.info('Write call simulated — paste a real ABI + address for live interaction');
   };
@@ -265,7 +265,7 @@ export function ContractInteract() {
       {!parsed && (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-xs text-[var(--subtle)] text-center max-w-xs">
-            Enter a contract address and ABI above, then click Load Contract to interact with any deployed contract on Arc Testnet.
+            Enter a contract address and ABI above, then click Load Contract to interact with any deployed contract on Arc.
           </p>
         </div>
       )}

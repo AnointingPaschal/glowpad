@@ -3,10 +3,10 @@ import { useAccount, useReadContract, useBalance } from 'wagmi';
 import { isAddress } from 'viem';
 import { erc20Abi } from 'viem';
 import { Search, ExternalLink, Copy, Check, Wallet, Activity, RefreshCw } from 'lucide-react';
-import { ARC_TESTNET_CHAIN_ID, USDC_ADDRESS, formatUsdc } from '../../launchpad-contract';
+import { ARC_MAINNET_CHAIN_ID, USDC_ADDRESS, formatUsdc } from '../../launchpad-contract';
 import { NetworkArc } from '@web3icons/react';
 
-const EXPLORER = 'https://explorer.testnet.arc.io';
+const EXPLORER = 'https://explorer.arc.io';
 
 export function TxExplorer() {
   const { address: connectedAddr } = useAccount();
@@ -19,7 +19,7 @@ export function TxExplorer() {
 
   const { data: nativeBal, refetch: refetchNative, isLoading: loadingNative } = useBalance({
     address: targetAddr,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
     query: { enabled: isValid },
   });
 
@@ -28,7 +28,7 @@ export function TxExplorer() {
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: targetAddr ? [targetAddr] : undefined,
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
     query: { enabled: isValid },
   }) as { data: bigint | undefined; refetch: () => void; isLoading: boolean };
 

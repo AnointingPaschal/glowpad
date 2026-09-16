@@ -1,6 +1,6 @@
 import { useReadContract } from 'wagmi';
 import {
-  LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, ARC_TESTNET_CHAIN_ID,
+  LAUNCHPAD_ADDRESS, LAUNCHPAD_ABI, ARC_MAINNET_CHAIN_ID,
   LaunchData, getLaunchStatus, formatUsdc, formatCountdown, progressPct, formatAddress,
 } from '../launchpad-contract';
 
@@ -31,7 +31,7 @@ export function LaunchCard({ launchId, onSelect }: LaunchCardProps) {
     abi: LAUNCHPAD_ABI,
     functionName: 'launches',
     args: [BigInt(launchId)],
-    chainId: ARC_TESTNET_CHAIN_ID,
+    chainId: ARC_MAINNET_CHAIN_ID,
   }) as { data: LaunchData | undefined };
 
   if (!launch) {

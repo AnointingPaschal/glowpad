@@ -1,9 +1,11 @@
 import artifact from '../contracts/out/ArcLaunchpad.sol/ArcLaunchpad.json';
 
-export const LAUNCHPAD_ADDRESS = '0x1669b59175941b07072b2984ec98889068085249' as const;
+// IMPORTANT: Replace this with the ArcLaunchpad address you deploy to Arc Mainnet.
+// The testnet contract at 0x1669b59175941b07072b2984ec98889068085249 is NOT valid on mainnet.
+export const LAUNCHPAD_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 export const LAUNCHPAD_ABI = artifact.abi;
 
-export const ARC_TESTNET_CHAIN_ID = 5042002;
+export const ARC_MAINNET_CHAIN_ID = 5042;
 export const USDC_ADDRESS = '0x3600000000000000000000000000000000000000' as const;
 
 export interface LaunchData {
