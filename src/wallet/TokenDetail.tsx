@@ -244,6 +244,8 @@ export function TokenDetail({ token, onBack, wallet }: {
   const [tradeError, setTradeError] = useState('');
   const [txHash, setTxHash] = useState('');
   const [copied, setCopied] = useState(false);
+  const [slideProgress, setSlideProgress] = useState(0);
+  const [isSliding, setIsSliding] = useState(false);
 
   // Generate chart data whenever price or tf changes
   const candles = useMemo(() => generateCandles(price > 0 ? price : 1, tf, 60), [price, tf]);
@@ -813,18 +815,68 @@ export function TokenDetail({ token, onBack, wallet }: {
                 </p>
               )}
               {tradeError && <p className="text-xs text-[#f87171] flex items-center gap-1"><AlertTriangle size={12} />{tradeError}</p>}
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => { setTradeMode('buy'); setShowPw(true); }}
-                  disabled={!tradeAmount || parseFloat(tradeAmount) <= 0 || !wallet.activeWallet}
-                  className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-white disabled:opacity-40"
-                  style={{ background: 'linear-gradient(135deg,#4e9ff5,#7c3aed)' }}>
-                  Buy
+
+              {/* Buy/Sell toggle */}
+              <div className="flex gap-2">
+                <button onClick={() => setTradeMode('buy')}
+                  className={`flex-1 py-2.5 rounded-2xl text-xs font-bold transition-all ${tradeMode === 'buy' ? 'bg-[#4ade80]/20 text-[#4ade80] border border-[#4ade80]/30' : 'border border-white/10 text-white/40'}`}>
+                  BUY
                 </button>
-                <button onClick={() => { setTradeMode('sell'); setShowPw(true); }}
-                  disabled={!tradeAmount || parseFloat(tradeAmount) <= 0 || !wallet.activeWallet}
-                  className="flex-1 py-3.5 rounded-2xl text-sm font-bold text-white bg-[#f87171]/80 disabled:opacity-40">
-                  Sell
+                <button onClick={() => setTradeMode('sell')}
+                  className={`flex-1 py-2.5 rounded-2xl text-xs font-bold transition-all ${tradeMode === 'sell' ? 'bg-[#f87171]/20 text-[#f87171] border border-[#f87171]/30' : 'border border-white/10 text-white/40'}`}>
+                  SELL
                 </button>
+              </div>
+
+              {/* Slide to confirm */}
+              <div
+                className="relative h-14 rounded-2xl overflow-hidden select-none mt-1"
+                style={{
+                  background: tradeMode === 'buy' ? 'rgba(74,222,128,0.08)' : 'rgba(248,113,113,0.08)',
+                  border: `1px solid ${tradeMode === 'buy' ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)'}`,
+                  opacity: (!tradeAmount || parseFloat(tradeAmount) <= 0 || !wallet.activeWallet) ? 0.4 : 1,
+                  pointerEvents: (!tradeAmount || parseFloat(tradeAmount) <= 0 || !wallet.activeWallet) ? 'none' : 'auto',
+                }}
+                onMouseMove={e => {
+                  if (!isSliding) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const pct = Math.min(100, Math.max(0, ((e.clientX - rect.left - 24) / (rect.width - 48)) * 100));
+                  setSlideProgress(pct);
+                  if (pct >= 95) { setIsSliding(false); setSlideProgress(0); setShowPw(true); }
+                }}
+                onMouseUp={() => { setIsSliding(false); setSlideProgress(0); }}
+                onMouseLeave={() => { setIsSliding(false); setSlideProgress(0); }}
+                onTouchMove={e => {
+                  if (!isSliding) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const touch = e.touches[0];
+                  if (!touch) return;
+                  const pct = Math.min(100, Math.max(0, ((touch.clientX - rect.left - 24) / (rect.width - 48)) * 100));
+                  setSlideProgress(pct);
+                  if (pct >= 95) { setIsSliding(false); setSlideProgress(0); setShowPw(true); }
+                }}
+                onTouchEnd={() => { setIsSliding(false); setSlideProgress(0); }}
+              >
+                {/* Fill */}
+                <div className="absolute inset-y-0 left-0 rounded-2xl transition-none"
+                  style={{ width: `${slideProgress}%`, background: tradeMode === 'buy' ? 'rgba(74,222,128,0.18)' : 'rgba(248,113,113,0.18)' }} />
+                {/* Label */}
+                <span className="absolute inset-0 flex items-center justify-center text-sm font-bold pointer-events-none"
+                  style={{ color: tradeMode === 'buy' ? '#4ade80' : '#f87171' }}>
+                  Slide to {tradeMode === 'buy' ? 'Buy' : 'Sell'} {token.symbol} →
+                </span>
+                {/* Thumb */}
+                <div
+                  className="absolute top-1.5 bottom-1.5 w-11 rounded-xl flex items-center justify-center cursor-pointer z-10"
+                  style={{
+                    left: `calc(${slideProgress}% * (100% - 48px) / 100 + 6px)`,
+                    background: tradeMode === 'buy' ? '#4ade80' : '#f87171',
+                  }}
+                  onMouseDown={() => setIsSliding(true)}
+                  onTouchStart={() => setIsSliding(true)}
+                >
+                  <span className="text-[#060e1a] font-bold text-xs">››</span>
+                </div>
               </div>
             </div>
           )}

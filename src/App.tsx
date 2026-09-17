@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Code2, Cpu, Search, ChevronRight, Zap,
   BookOpen, ExternalLink, Menu, X, Rocket,
-  BarChart2, Wallet, ShieldAlert,
+  BarChart2, Wallet, ShieldAlert, Flame, Trophy, TrendingUp,
 } from 'lucide-react';
 import { NetworkArc } from '@web3icons/react';
 
@@ -13,11 +13,14 @@ import { TxExplorer } from './components/ide/TxExplorer';
 import { DexScreen } from './components/dex/DexScreen';
 import { WalletPage } from './wallet/WalletPage';
 import { AdminPanel } from './admin/AdminPanel';
+import { FeedScreen } from './social/FeedScreen';
+import { LeaderboardScreen } from './social/LeaderboardScreen';
+import { PerpsScreen } from './social/PerpsScreen';
 import { useWallet } from './wallet/useWallet';
 import { WalletContext } from './wallet/walletContext';
 
 // ── Navigation items ───────────────────────────────────────────────────────
-type NavKey = 'launchpad' | 'dex' | 'ide' | 'interact' | 'explorer' | 'wallet' | 'admin';
+type NavKey = 'launchpad' | 'dex' | 'wallet' | 'feed' | 'leaderboard' | 'perps' | 'ide' | 'interact' | 'explorer' | 'admin';
 
 interface NavItem {
   key: NavKey;
@@ -27,13 +30,16 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { key: 'launchpad', label: 'Launchpad',    icon: Rocket,    badge: 'Live' },
-  { key: 'dex',       label: 'DEX Markets',  icon: BarChart2               },
-  { key: 'wallet',    label: 'Wallet',       icon: Wallet                  },
-  { key: 'ide',       label: 'Solidity IDE', icon: Code2                   },
-  { key: 'interact',  label: 'Interact',     icon: Cpu                     },
-  { key: 'explorer',  label: 'Explorer',     icon: Search                  },
-  { key: 'admin',     label: 'Admin',        icon: ShieldAlert             },
+  { key: 'feed',        label: 'Social Feed',  icon: Flame,      badge: 'New' },
+  { key: 'launchpad',   label: 'Launchpad',    icon: Rocket,     badge: 'Live' },
+  { key: 'dex',         label: 'DEX Markets',  icon: BarChart2              },
+  { key: 'perps',       label: 'Perpetuals',   icon: TrendingUp             },
+  { key: 'wallet',      label: 'Wallet',       icon: Wallet                 },
+  { key: 'leaderboard', label: 'Leaderboard',  icon: Trophy                 },
+  { key: 'ide',         label: 'Solidity IDE', icon: Code2                  },
+  { key: 'interact',    label: 'Interact',     icon: Cpu                    },
+  { key: 'explorer',    label: 'Explorer',     icon: Search                 },
+  { key: 'admin',       label: 'Admin',        icon: ShieldAlert            },
 ];
 
 // ── Desktop Sidebar ────────────────────────────────────────────────────────
@@ -158,7 +164,7 @@ function BottomNav({
 
 // ── Main App ───────────────────────────────────────────────────────────────
 export default function App() {
-  const [activeNav, setActiveNav] = useState<NavKey>('launchpad');
+  const [activeNav, setActiveNav] = useState<NavKey>('feed');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const walletCtx = useWallet();
@@ -172,13 +178,16 @@ export default function App() {
 
   const renderContent = () => {
     switch (activeNav) {
-      case 'launchpad': return <LaunchpadHome onNavigateToWallet={() => handleNav('wallet')} />;
-      case 'dex':       return <DexScreen />;
-      case 'wallet':    return <WalletPage />;
-      case 'ide':       return <SolidityIDE />;
-      case 'interact':  return <ContractInteract />;
-      case 'explorer':  return <TxExplorer />;
-      case 'admin':     return <AdminPanel />;
+      case 'feed':        return <FeedScreen />;
+      case 'launchpad':   return <LaunchpadHome onNavigateToWallet={() => handleNav('wallet')} />;
+      case 'dex':         return <DexScreen />;
+      case 'perps':       return <PerpsScreen />;
+      case 'wallet':      return <WalletPage />;
+      case 'leaderboard': return <LeaderboardScreen />;
+      case 'ide':         return <SolidityIDE />;
+      case 'interact':    return <ContractInteract />;
+      case 'explorer':    return <TxExplorer />;
+      case 'admin':       return <AdminPanel />;
     }
   };
 
